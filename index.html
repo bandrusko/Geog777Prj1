@@ -340,10 +340,10 @@
         <!-- Cancer rate zone layer toggle and opacity slider. -->
         <div class="layer-control-row">
             <label>
-                <input type="checkbox" id="cancerToggle">
+                <input type="checkbox" id="cancerToggle" checked>
                 Cancer Rate (observed)
             </label>
-            <div class="layer-opacity-row" id="cancerOpacityRow" style="display:none;">
+            <div class="layer-opacity-row" id="cancerOpacityRow">
                 <span>Opacity</span>
                 <input type="range" id="cancerOpacitySlider" min="0" max="1" step="0.05" value="0.7">
                 <span id="cancerOpacityVal">70%</span>
@@ -366,10 +366,10 @@
         <!-- Predicted cancer rate zone layer toggle and opacity slider. -->
         <div class="layer-control-row">
             <label>
-                <input type="checkbox" id="predictedToggle" checked>
+                <input type="checkbox" id="predictedToggle">
                 Predicted Cancer Rate
             </label>
-            <div class="layer-opacity-row" id="predictedOpacityRow" style="display:flex;">
+            <div class="layer-opacity-row" id="predictedOpacityRow" style="display:none;">
                 <span>Opacity</span>
                 <input type="range" id="predictedOpacitySlider" min="0" max="1" step="0.05" value="0.7">
                 <span id="predictedOpacityVal">70%</span>
@@ -427,6 +427,8 @@
         </div>
 
         <div id="cancerStatus" class="small" style="color:#888; margin-top:4px;">Loading zone data…</div>
+        <!-- Color legend for the cancer rate layer, built automatically using quantile classification. -->
+        <div id="cancerLegend" class="small" style="margin-top:8px;"></div>
         <!-- Detail panel that populates with tract information when the user clicks a zone on the map. -->
         <div id="tractInfo" class="small" style="margin-top:8px; padding:8px; background:#f5f5f5; border-radius:4px;">
             Click a zone on the map to see its details here.
@@ -554,30 +556,12 @@
 
         // ====================================================================
         // MAP INITIALIZATION
-        // Creates the Leaflet map centered on Wisconsin and loads a label-free
-        // basemap underneath all the analysis overlays. CartoDB Positron's
-        // "no labels" variant is used so no place names/city names are baked
-        // into the tiles themselves — the only city names shown come from our
-        // own Wisconsin Cities reference layer, which we fully control.
+        // Creates the Leaflet map centered on Wisconsin and loads OpenStreetMap
+        // as the base tile layer underneath all the analysis overlays.
         // ====================================================================
         var map = L.map('map').setView([44.5, -90], 7);
-        var basemap = L.tileLayer('https://{s}.basemaps.cartocdn.com/light_nolabels/{z}/{x}/{y}{r}.png', {
-            attribution: '© OpenStreetMap contributors © CARTO',
-            subdomains: 'abcd',
-            maxZoom: 19
-        }).addTo(map);
-
-        // ====================================================================
-        // CUSTOM PANES
-        // A dedicated pane for the Wisconsin Cities reference layer, given a
-        // higher z-index than the default overlay pane (400) that the analysis
-        // zone layers and IDW raster use. This guarantees the city markers and
-        // their labels always render above every analysis layer, regardless of
-        // which layers are toggled on or the order they were added in.
-        // ====================================================================
-        map.createPane('citiesPane');
-        map.getPane('citiesPane').style.zIndex = 650;
-        map.getPane('citiesPane').style.pointerEvents = 'auto';
+        var osm = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+            { attribution: '© OpenStreetMap contributors' }).addTo(map);
 
         // ====================================================================
         // APPLICATION STATE
@@ -600,7 +584,7 @@
 
         var analysisCache = {};                              /** stores completed results by k value so re-runs are instant */
         var cancerColorFn = function () { return "#cccccc"; }; /** color function for the cancer rate layer, set at startup */
-        var cancerBreaksForLegend = [];                      /** quantile break values used to build the dynamic legend */
+        var cancerBreaksForLegend = [];                      /** quantile break values used to build the sidebar legend */
 
         var lastScatterData = null;  /** stores the most recent xs, ys, and regression result for scatterplot redraws */
 
@@ -1862,20 +1846,12 @@
         // only to decide which cities receive a larger marker and bolder label
         // so the most prominent cities stand out at the default zoom level.
         //
-        // Each city also carries an explicit labelDir ('top' | 'bottom' | 'left' | 'right')
-        // and labelOffset (pixels), assigned by hand per-city rather than by a single
-        // east/west split. This is what keeps labels in tight clusters (e.g. the
-        // Milwaukee/Waukesha/Brookfield/New Berlin area, or the Appleton/Oshkosh/
-        // Fond du Lac corridor) from overlapping each other.
-        //
-        //   WI_CITIES           — array of { name, lat, lng, pop, labelDir, labelOffset } objects
+        //   WI_CITIES           — array of { name, lat, lng, pop } objects
         //                         covering the largest cities and regional centers
         //                         across the state
         //   buildCitiesLayer    — creates a Leaflet circle marker and a permanent
         //                         text-only tooltip for each city, sized by
         //                         population tier, and adds them all to citiesLayer
-        //                         inside the dedicated 'citiesPane' so this layer
-        //                         always draws on top of every analysis layer.
         // ====================================================================
 
         /** Hard-coded coordinates and populations for significant Wisconsin cities.
@@ -1884,60 +1860,41 @@
          */
         const WI_CITIES = [
             /** Major cities (population > 100 000) */
-            { name: "Milwaukee",   lat: 43.0389, lng: -87.9065, pop: 577222, labelDir: "right",  labelOffset: 9 },
-            { name: "Madison",     lat: 43.0731, lng: -89.4012, pop: 269840, labelDir: "right",  labelOffset: 9 },
-            { name: "Green Bay",   lat: 44.5133, lng: -88.0133, pop: 107395, labelDir: "right",  labelOffset: 9 },
+            { name: "Milwaukee",   lat: 43.0389, lng: -87.9065, pop: 577222 },
+            { name: "Madison",     lat: 43.0731, lng: -89.4012, pop: 269840 },
+            { name: "Green Bay",   lat: 44.5133, lng: -88.0133, pop: 107395 },
 
             /** Large cities (population 50 000 – 100 000) */
-            { name: "Kenosha",     lat: 42.5847, lng: -87.8212, pop: 99889,  labelDir: "bottom", labelOffset: 8 },
-            { name: "Racine",      lat: 42.7261, lng: -87.7829, pop: 77816,  labelDir: "right",  labelOffset: 8 },
-            { name: "Appleton",    lat: 44.2619, lng: -88.4154, pop: 75644,  labelDir: "top",    labelOffset: 8 },
-            { name: "Waukesha",    lat: 43.0117, lng: -88.2315, pop: 72419,  labelDir: "left",   labelOffset: 8 },
-            { name: "Oshkosh",     lat: 44.0247, lng: -88.5426, pop: 66778,  labelDir: "bottom", labelOffset: 8 },
-            { name: "Eau Claire",  lat: 44.8113, lng: -91.4985, pop: 69967,  labelDir: "left",   labelOffset: 8 },
-            { name: "Janesville",  lat: 42.6828, lng: -89.0187, pop: 65615,  labelDir: "bottom", labelOffset: 8 },
+            { name: "Kenosha",     lat: 42.5847, lng: -87.8212, pop: 99889  },
+            { name: "Racine",      lat: 42.7261, lng: -87.7829, pop: 77816  },
+            { name: "Appleton",    lat: 44.2619, lng: -88.4154, pop: 75644  },
+            { name: "Waukesha",    lat: 43.0117, lng: -88.2315, pop: 72419  },
+            { name: "Oshkosh",     lat: 44.0247, lng: -88.5426, pop: 66778  },
+            { name: "Eau Claire",  lat: 44.8113, lng: -91.4985, pop: 69967  },
+            { name: "Janesville",  lat: 42.6828, lng: -89.0187, pop: 65615  },
 
             /** Regional centers and smaller cities */
-            { name: "La Crosse",     lat: 43.8014, lng: -91.2396, pop: 52680, labelDir: "left",   labelOffset: 7 },
-            { name: "Sheboygan",     lat: 43.7508, lng: -87.7145, pop: 49288, labelDir: "right",  labelOffset: 7 },
-            { name: "Fond du Lac",   lat: 43.7730, lng: -88.4471, pop: 43872, labelDir: "right",  labelOffset: 7 },
-            { name: "Wausau",        lat: 44.9591, lng: -89.6301, pop: 39993, labelDir: "left",   labelOffset: 7 },
-            { name: "Brookfield",    lat: 43.0606, lng: -88.1065, pop: 41464, labelDir: "top",    labelOffset: 10 },
-            { name: "New Berlin",    lat: 42.9764, lng: -88.1078, pop: 40885, labelDir: "bottom", labelOffset: 10 },
-            { name: "Beloit",        lat: 42.5084, lng: -89.0318, pop: 36888, labelDir: "bottom", labelOffset: 7 },
-            { name: "Manitowoc",     lat: 44.0886, lng: -87.6562, pop: 32595, labelDir: "right",  labelOffset: 7 },
-            { name: "Superior",      lat: 46.7208, lng: -92.1041, pop: 26751, labelDir: "left",   labelOffset: 7 },
-            { name: "Stevens Point", lat: 44.5236, lng: -89.5746, pop: 26819, labelDir: "right",  labelOffset: 7 },
-            { name: "Marshfield",    lat: 44.6688, lng: -90.1718, pop: 19118, labelDir: "bottom", labelOffset: 7 },
-            { name: "Rhinelander",   lat: 45.6363, lng: -89.4120, pop: 7798,  labelDir: "right",  labelOffset: 7 },
-            { name: "Ashland",       lat: 46.5927, lng: -90.8788, pop: 7774,  labelDir: "left",   labelOffset: 7 },
-            { name: "Antigo",        lat: 45.1413, lng: -89.1540, pop: 8082,  labelDir: "top",    labelOffset: 7 }
+            { name: "La Crosse",   lat: 43.8014, lng: -91.2396, pop: 52680  },
+            { name: "Sheboygan",   lat: 43.7508, lng: -87.7145, pop: 49288  },
+            { name: "Fond du Lac", lat: 43.7730, lng: -88.4471, pop: 43872  },
+            { name: "Wausau",      lat: 44.9591, lng: -89.6301, pop: 39993  },
+            { name: "Brookfield",  lat: 43.0606, lng: -88.1065, pop: 41464  },
+            { name: "New Berlin",  lat: 42.9764, lng: -88.1078, pop: 40885  },
+            { name: "Beloit",      lat: 42.5084, lng: -89.0318, pop: 36888  },
+            { name: "Manitowoc",   lat: 44.0886, lng: -87.6562, pop: 32595  },
+            { name: "Superior",    lat: 46.7208, lng: -92.1041, pop: 26751  },
+            { name: "Stevens Point", lat: 44.5236, lng: -89.5746, pop: 26819 },
+            { name: "Marshfield",  lat: 44.6688, lng: -90.1718, pop: 19118  },
+            { name: "Rhinelander", lat: 45.6363, lng: -89.4120, pop: 7798   },
+            { name: "Ashland",     lat: 46.5927, lng: -90.8788, pop: 7774   },
+            { name: "Antigo",      lat: 45.1413, lng: -89.1540, pop: 8082   }
         ];
-
-        /** Translates a labelDir string into the Leaflet tooltip direction + offset options.
-         *  'top' and 'bottom' place the label directly above/below the marker; 'left' and
-         *  'right' place it to the side. This lets nearby cities be spread out in whichever
-         *  direction keeps their text clear of their neighbors.
-         */
-        function tooltipOptionsForDir(dir, offsetPx) {
-            switch (dir) {
-                case "top":    return { direction: "top",    offset: [0, -offsetPx] };
-                case "bottom": return { direction: "bottom", offset: [0,  offsetPx] };
-                case "left":   return { direction: "left",   offset: [-offsetPx, 0] };
-                case "right":
-                default:       return { direction: "right",  offset: [offsetPx, 0] };
-            }
-        }
 
         /** Builds the cities reference layer by placing a circle marker and a permanent
          *  label tooltip at each city's coordinates. Cities with population above 100 000
          *  receive a larger, darker marker and bold label so they stand out as landmarks
          *  at the default statewide zoom level. Clicking a marker opens a small popup
          *  showing the city name and its approximate population.
-         *
-         *  Both the marker and its tooltip are placed in the dedicated 'citiesPane' (see
-         *  CUSTOM PANES above), which sits above every analysis layer's pane, so this
-         *  reference layer always renders on top of the map's layer stack.
          */
         function buildCitiesLayer() {
             citiesLayer.clearLayers();
@@ -1952,31 +1909,27 @@
                 const fontWeight  = isMajor ? "bold" : "normal";
                 const fontSize    = isMajor ? "12px" : isLarge ? "11px" : "10px";
 
-                /** Create the circle marker at the city's coordinates, in the citiesPane
-                 *  so it always draws above the analysis zone layers and IDW raster.
-                 */
+                /** Create the circle marker at the city's coordinates. */
                 const marker = L.circleMarker([city.lat, city.lng], {
                     radius:      radius,
                     fillColor:   fillColor,
                     color:       "#ffffff",
                     weight:      1.5,
                     fillOpacity: 0.9,
-                    opacity:     1,
-                    pane:        "citiesPane"
+                    opacity:     1
                 });
 
                 /** Bind a permanent tooltip that always shows the city name on the map.
-                 *  The direction and offset come from the city's hand-assigned labelDir /
-                 *  labelOffset so that cities sitting close together on the map (e.g. the
-                 *  Milwaukee metro cluster) spread their labels in different directions
-                 *  instead of stacking on top of one another.
+                 *  The tooltip is direction-aware: cities in the eastern half of Wisconsin
+                 *  display their label to the left so it does not run off the map edge.
                  */
-                const dirOpts = tooltipOptionsForDir(city.labelDir, city.labelOffset);
-                marker.bindTooltip(city.name, Object.assign({
-                    permanent: true,
-                    className: "city-label",
-                    pane:      "citiesPane"
-                }, dirOpts));
+                const labelDir = city.lng > -89.5 ? "left" : "right";
+                marker.bindTooltip(city.name, {
+                    permanent:  true,
+                    direction:  labelDir,
+                    className:  "city-label",
+                    offset:     labelDir === "left" ? [-6, 0] : [6, 0]
+                });
 
                 /** Bind a click popup showing the city name and rounded population figure. */
                 marker.bindPopup(
@@ -1991,15 +1944,15 @@
         // ====================================================================
         // CANCER RATE LAYER (observed)
         // This is the primary required layer for the assignment, built once at
-        // startup from the census tract data. It does not depend on the k value
-        // and does not change between analysis runs. It starts hidden — only the
-        // Predicted Cancer Rate layer is shown by default — but can be toggled
-        // on from the sidebar at any time.
+        // startup from the census tract data and displayed by default on the map.
+        // It does not depend on the k value and does not change between analysis runs.
         //
         //   computeQuantileBreaks — divides the cancer rate values into equal-count
         //                           groups and returns the boundary values between them
         //   buildCancerColorFn    — assigns a color to each tract using quantile
-        //                           classification and stores legend metadata for it
+        //                           classification and populates the sidebar legend
+        //   renderCancerLegend    — writes the color swatches and value ranges into
+        //                           the legend div in the sidebar
         //   buildCancerLayer      — creates the Leaflet GeoJSON layer with click,
         //                           hover, and popup interactions for each tract
         // ====================================================================
@@ -2027,7 +1980,7 @@
                 });
             }
 
-            /** Store cancer legend metadata so the dynamic (bottom-right) legend can use it. */
+            /** Store cancer legend metadata so the dynamic legend can use it immediately. */
             legendMeta.cancer = cancerBreaksForLegend.slice();
 
             return function (value) {
@@ -2037,8 +1990,18 @@
             };
         }
 
+        function renderCancerLegend() {
+            let html = "";
+            cancerBreaksForLegend.forEach(b => {
+                html += "<span style='display:inline-block;width:12px;height:12px;background:" + b.color +
+                    ";border:1px solid #999;margin-right:6px;vertical-align:middle;'></span>" + b.label + "<br>";
+            });
+            document.getElementById("cancerLegend").innerHTML = html;
+        }
+
         function buildCancerLayer() {
             cancerColorFn = buildCancerColorFn(zonesGeoJSON);
+            renderCancerLegend();
             cancerLayer.clearLayers();
 
             const fillOp = layerOpacity.cancer;
@@ -2228,11 +2191,10 @@
         // ====================================================================
         // STARTUP — initApp
         // Loads all three datasets in parallel, validates them, and initializes
-        // the map. The cancer rate layer and city labels are built first, but
-        // only the Predicted Cancer Rate layer is shown on the map by default
-        // (once the initial analysis run completes) — every other analysis
-        // layer starts hidden and can be switched on from the sidebar.
-        // The state boundary is drawn as an outline if the file is available.
+        // the map. The cancer rate layer is built and displayed first since it
+        // is the primary required layer for the assignment. The state boundary
+        // is drawn as an outline if the file is available. Finally, the initial
+        // IDW analysis is run at the default k value of 2.
         // Any errors during loading or analysis are caught and shown in the status bar.
         // ====================================================================
         async function initApp() {
@@ -2270,10 +2232,7 @@
                 dataBounds = computeDataBounds();
                 map.fitBounds(dataBounds);
 
-                /** Build the cancer rate layer's data/coloring (needed for popups even while
-                 *  hidden) but do NOT add it to the map — only Predicted Cancer Rate is shown
-                 *  by default, per the cancerToggle checkbox starting unchecked.
-                 */
+                /** Build the cancer rate layer first — it is the primary required layer for the assignment. */
                 buildCancerLayer();
                 document.getElementById("cancerStatus").innerHTML = "";
 
@@ -2288,18 +2247,13 @@
                 rebuildDynamicLegend();
 
                 /** Build the cities reference layer and add it to the map if the toggle is on.
-                 *  This runs after the state boundary so city markers render on top of the outline;
-                 *  the dedicated citiesPane also keeps it above every analysis layer regardless of order.
+                 *  This runs after the state boundary so city markers render on top of the outline.
                  */
                 buildCitiesLayer();
                 if (document.getElementById("citiesToggle").checked) citiesLayer.addTo(map);
 
-                /** Run the initial analysis using the default k value shown in the input field.
-                 *  This populates predictedByZone and, since the Predicted Cancer Rate checkbox
-                 *  starts checked, adds the predicted layer to the map.
-                 */
+                /** Run the initial analysis using the default k value shown in the input field. */
                 await runAnalysisForK(document.getElementById("kInput").value);
-                if (document.getElementById("predictedToggle").checked) predictedLayer.addTo(map);
 
             } catch (err) {
                 console.error(err);
