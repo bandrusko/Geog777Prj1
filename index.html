@@ -1,0 +1,2316 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="utf-8">
+    <title>Nitrate Concentration and Cancer Rate Analysis</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+    <style>
+        /** Sets the map to fill the entire browser window with no gaps or extra spacing. */
+        html,
+        body {
+            margin: 0;
+            padding: 0;
+            height: 100%;
+        }
+
+        #map {
+            height: 100%;
+        }
+
+        /** Styles the left-side control panel that sits on top of the map. */
+        /** It is fixed in width, scrollable if the content gets too long, and layered above the map. */
+        .control-panel {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            width: 310px;
+            max-height: 95%;
+            overflow-y: auto;
+            background: white;
+            z-index: 1000;
+            padding: 15px;
+            border-radius: 8px;
+            box-shadow: 0 0 10px rgba(0, 0, 0, .3);
+            font-family: Arial;
+        }
+
+        /** Styles the dynamic legend box fixed in the bottom-right corner of the map.
+         *  The legend rebuilds itself whenever layers are toggled on or off.
+         */
+        .legend {
+            position: absolute;
+            bottom: 20px;
+            right: 20px;
+            background: white;
+            padding: 12px 14px;
+            z-index: 1000;
+            border-radius: 5px;
+            box-shadow: 0 0 8px rgba(0, 0, 0, .3);
+            font-family: Arial;
+            font-size: 12px;
+            min-width: 200px;
+            max-width: 260px;
+        }
+
+        /** Each legend section groups the title, color swatches, and opacity slider
+         *  for a single active layer. Sections are separated by a thin rule.
+         */
+        .legend-section {
+            margin-bottom: 10px;
+            padding-bottom: 10px;
+            border-bottom: 1px solid #e0e0e0;
+        }
+
+        .legend-section:last-child {
+            margin-bottom: 0;
+            padding-bottom: 0;
+            border-bottom: none;
+        }
+
+        .legend-section-title {
+            font-weight: bold;
+            margin-bottom: 6px;
+            font-size: 12px;
+        }
+
+        /** Lays out each color swatch row — a square of color on the left and a label on the right. */
+        .legend-swatch-row {
+            display: flex;
+            align-items: center;
+            margin-bottom: 3px;
+            font-size: 11px;
+        }
+
+        .legend-swatch {
+            width: 14px;
+            height: 14px;
+            border: 1px solid #999;
+            border-radius: 2px;
+            flex-shrink: 0;
+            margin-right: 6px;
+        }
+
+        /** Styles the per-layer opacity slider row inside each legend section. */
+        .legend-opacity-row {
+            display: flex;
+            align-items: center;
+            margin-top: 6px;
+            gap: 6px;
+            font-size: 11px;
+            color: #555;
+        }
+
+        .legend-opacity-row input[type="range"] {
+            flex: 1;
+            height: 4px;
+            cursor: pointer;
+        }
+
+        /** Shown in the legend when no analysis layers are currently toggled on. */
+        #legendEmpty {
+            color: #888;
+            font-size: 11px;
+        }
+
+        /** Styles the scatterplot panel that appears after the first analysis is run. */
+        /** It is hidden by default and can be dragged around the screen by its header bar. */
+        #scatterPanel {
+            position: absolute;
+            bottom: 20px;
+            left: 340px;
+            width: 340px;
+            background: white;
+            z-index: 1000;
+            border-radius: 8px;
+            box-shadow: 0 0 10px rgba(0, 0, 0, .3);
+            font-family: Arial;
+            font-size: 12px;
+            display: none;
+        }
+
+        #scatterHeader {
+            padding: 8px 12px;
+            font-weight: bold;
+            font-size: 13px;
+            border-bottom: 1px solid #e0e0e0;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            cursor: move;
+            user-select: none;
+            background: #f8f8f8;
+            border-radius: 8px 8px 0 0;
+        }
+
+        #scatterPanel canvas {
+            display: block;
+            margin: 0 auto;
+        }
+
+        #scatterFooter {
+            padding: 6px 12px 8px;
+            color: #555;
+            font-size: 11px;
+            text-align: center;
+            border-top: 1px solid #eee;
+        }
+
+        #scatterCloseBtn {
+            cursor: pointer;
+            font-size: 16px;
+            color: #888;
+            line-height: 1;
+            background: none;
+            border: none;
+            padding: 0 2px;
+        }
+
+        #scatterCloseBtn:hover {
+            color: #333;
+        }
+
+        #scatterToggleBtn {
+            font-size: 11px;
+            padding: 2px 7px;
+            cursor: pointer;
+            margin-top: 4px;
+        }
+
+        /** General styling for headings, small text, the k input box, preset buttons, and the run button. */
+        h2 {
+            margin-top: 0;
+        }
+
+        .small {
+            font-size: 12px;
+        }
+
+        #kInput {
+            width: 70px;
+        }
+
+        .preset-btn {
+            font-size: 11px;
+            padding: 2px 6px;
+            margin: 2px 2px 0 0;
+            cursor: pointer;
+        }
+
+        #runBtn {
+            cursor: pointer;
+        }
+
+        #runBtn:disabled {
+            cursor: wait;
+            opacity: 0.6;
+        }
+
+        /** Styles the layer toggle rows in the sidebar — each row has a checkbox,
+         *  a label, and its own opacity slider underneath when the layer is active.
+         */
+        .layer-control-row {
+            margin-bottom: 8px;
+        }
+
+        .layer-opacity-row {
+            display: flex;
+            align-items: center;
+            margin-top: 4px;
+            gap: 6px;
+            font-size: 11px;
+            color: #666;
+            padding-left: 20px;
+        }
+
+        .layer-opacity-row input[type="range"] {
+            flex: 1;
+            cursor: pointer;
+        }
+
+        .layer-opacity-row span {
+            min-width: 28px;
+            text-align: right;
+        }
+
+        /** Styles the k comparison section in the sidebar.
+         *  A light blue-tinted background visually separates it from the primary analysis controls.
+         */
+        #comparisonSection {
+            background: #f0f6ff;
+            border: 1px solid #c8daf5;
+            border-radius: 6px;
+            padding: 10px 12px;
+            margin-top: 4px;
+        }
+
+        #comparisonSection b {
+            color: #1a4a8a;
+        }
+
+        #kCompareInput {
+            width: 70px;
+        }
+
+        #runCompareBtn {
+            cursor: pointer;
+        }
+
+        #runCompareBtn:disabled {
+            cursor: wait;
+            opacity: 0.6;
+        }
+        /** Styles the permanent city name tooltips on the map.
+         *  Removes the default Leaflet tooltip border and background so the labels
+         *  read as clean text floating near each marker rather than boxed callouts.
+         */
+        .city-label {
+            background: transparent;
+            border: none;
+            box-shadow: none;
+            font-family: Arial;
+            font-size: 11px;
+            color: #1a1a2e;
+            font-weight: normal;
+            white-space: nowrap;
+            text-shadow: 0 0 3px #fff, 0 0 3px #fff, 0 0 3px #fff;
+        }
+
+        .city-label::before {
+            display: none;  /** hides the default Leaflet tooltip arrow */
+        }
+    </style>
+</head>
+
+<body>
+
+    <div id="map"></div>
+
+    <!-- Left sidebar panel containing all user controls:
+         the k exponent input, preset buttons, opacity sliders per layer,
+         cancer layer toggle, regression results, and the scatterplot button. -->
+    <div class="control-panel">
+        <h2>Nitrate &amp; Cancer</h2>
+        <hr>
+
+        <b>IDW Distance Exponent (k)</b><br>
+        <span class="small" style="color:#888;">Any k &gt; 0 is accepted.</span>
+        <br><br>
+
+        <!-- Input field where the user types a custom k value before running the analysis. -->
+        <input type="number" id="kInput" min="0.1" step="0.1" value="2">
+        <button id="runBtn" onclick="handleRunClick()">Run Analysis</button>
+        <br><br>
+
+        <!-- Quick-select buttons that set k to a common value and immediately run the analysis. -->
+        <span class="small">Presets:</span><br>
+        <button class="preset-btn" data-k="1.5">1.5</button>
+        <button class="preset-btn" data-k="2">2</button>
+        <button class="preset-btn" data-k="3">3</button>
+        <button class="preset-btn" data-k="4">4</button>
+        <button class="preset-btn" data-k="5">5</button>
+
+        <!-- Status message shown while data is loading or the IDW calculation is running. -->
+        <div id="rasterStatus" class="small" style="color:#888; margin-top:6px;">Waiting on source data…</div>
+        <!-- Displays the min and max nitrate values found across the computed surface. -->
+        <div id="nitrateRangeInfo" class="small" style="margin-top:4px;"></div>
+
+        <hr>
+        <!-- ================================================================
+             LAYER TOGGLES AND OPACITY CONTROLS
+             Each layer has its own checkbox and opacity slider. The slider
+             is only shown while the layer is toggled on. Changing opacity
+             here also updates the matching slider in the bottom-right legend.
+             ================================================================ -->
+        <b>Layer Visibility &amp; Opacity</b><br><br>
+
+        <!-- Nitrate IDW raster layer toggle and opacity slider. -->
+        <div class="layer-control-row">
+            <label>
+                <input type="checkbox" id="nitrateRasterToggle">
+                Nitrate Surface (IDW raster)
+            </label>
+            <div class="layer-opacity-row" id="nitrateRasterOpacityRow" style="display:none;">
+                <span>Opacity</span>
+                <input type="range" id="opacitySlider" min="0" max="1" step="0.05" value="0.7">
+                <span id="nitrateRasterOpacityVal">70%</span>
+            </div>
+        </div>
+
+        <!-- Cancer rate zone layer toggle and opacity slider. -->
+        <div class="layer-control-row">
+            <label>
+                <input type="checkbox" id="cancerToggle">
+                Cancer Rate (observed)
+            </label>
+            <div class="layer-opacity-row" id="cancerOpacityRow" style="display:none;">
+                <span>Opacity</span>
+                <input type="range" id="cancerOpacitySlider" min="0" max="1" step="0.05" value="0.7">
+                <span id="cancerOpacityVal">70%</span>
+            </div>
+        </div>
+
+        <!-- Mean nitrate zone layer toggle and opacity slider. -->
+        <div class="layer-control-row">
+            <label>
+                <input type="checkbox" id="meanNitrateToggle">
+                Mean Nitrate by Zone
+            </label>
+            <div class="layer-opacity-row" id="meanNitrateOpacityRow" style="display:none;">
+                <span>Opacity</span>
+                <input type="range" id="meanNitrateOpacitySlider" min="0" max="1" step="0.05" value="0.7">
+                <span id="meanNitrateOpacityVal">70%</span>
+            </div>
+        </div>
+
+        <!-- Predicted cancer rate zone layer toggle and opacity slider. -->
+        <div class="layer-control-row">
+            <label>
+                <input type="checkbox" id="predictedToggle" checked>
+                Predicted Cancer Rate
+            </label>
+            <div class="layer-opacity-row" id="predictedOpacityRow" style="display:flex;">
+                <span>Opacity</span>
+                <input type="range" id="predictedOpacitySlider" min="0" max="1" step="0.05" value="0.7">
+                <span id="predictedOpacityVal">70%</span>
+            </div>
+        </div>
+
+        <!-- Residuals zone layer toggle and opacity slider. -->
+        <div class="layer-control-row">
+            <label>
+                <input type="checkbox" id="residualToggle">
+                Residuals (obs − predicted)
+            </label>
+            <div class="layer-opacity-row" id="residualOpacityRow" style="display:none;">
+                <span>Opacity</span>
+                <input type="range" id="residualOpacitySlider" min="0" max="1" step="0.05" value="0.7">
+                <span id="residualOpacityVal">70%</span>
+            </div>
+        </div>
+
+        <!-- ================================================================
+             K COMPARISON LAYER TOGGLE AND OPACITY CONTROL
+             This layer is only meaningful after a comparison has been run.
+             It shows the per-tract difference in predicted cancer rate
+             between the primary k and the comparison k using a diverging
+             orange-white-teal color scale.
+             ================================================================ -->
+        <div class="layer-control-row">
+            <label>
+                <input type="checkbox" id="comparisonToggle">
+                <span id="comparisonToggleLabel">K Comparison (run below)</span>
+            </label>
+            <div class="layer-opacity-row" id="comparisonOpacityRow" style="display:none;">
+                <span>Opacity</span>
+                <input type="range" id="comparisonOpacitySlider" min="0" max="1" step="0.05" value="0.7">
+                <span id="comparisonOpacityVal">70%</span>
+            </div>
+        </div>
+
+        <!-- ================================================================
+             WISCONSIN CITIES REFERENCE LAYER TOGGLE
+             This layer places labeled circle markers at the coordinates of
+             significant Wisconsin cities. It is purely for visual reference
+             and does not interact with the IDW analysis or regression in any
+             way. The layer is built once at startup from a hard-coded list
+             of city names and coordinates and never needs to be recomputed.
+             Unlike the analysis layers, this toggle has no opacity slider
+             because the markers are small enough that partial transparency
+             would make the text labels illegible.
+             ================================================================ -->
+        <div class="layer-control-row">
+            <label>
+                <input type="checkbox" id="citiesToggle" checked>
+                Wisconsin Cities (reference)
+            </label>
+        </div>
+
+        <div id="cancerStatus" class="small" style="color:#888; margin-top:4px;">Loading zone data…</div>
+        <!-- Detail panel that populates with tract information when the user clicks a zone on the map. -->
+        <div id="tractInfo" class="small" style="margin-top:8px; padding:8px; background:#f5f5f5; border-radius:4px;">
+            Click a zone on the map to see its details here.
+        </div>
+
+        <hr>
+        <!-- Displays the regression equation and R² value, updated each time the analysis runs. -->
+        <div id="regressionBox">
+            <b>Regression Results</b><br><br>
+            CancerRate = β₀ + β₁(Nitrate) — run an analysis to populate.
+        </div>
+
+        <br>
+        <!-- Button to open or close the scatterplot panel. Hidden until the first analysis completes. -->
+        <button id="scatterToggleBtn" style="display:none;" onclick="toggleScatter()">📈 Show Scatterplot</button>
+
+        <hr>
+
+        <!-- ================================================================
+             K COMPARISON SECTION
+             Lets the user pick a second k value and compare how the choice
+             of distance exponent shifts the predicted cancer rate across tracts.
+             The comparison layer shows the signed difference (primary minus
+             comparison) using a diverging orange-white-teal color scale:
+               orange → primary k predicts a higher cancer rate here
+               teal   → comparison k predicts a higher cancer rate here
+               white  → the two k values agree closely
+             Both k values are computed (or pulled from cache) before the
+             diff layer is built. Reusing existing cache means that any k
+             already run this session costs nothing to compare against.
+             ================================================================ -->
+        <div id="comparisonSection">
+            <b>K Comparison</b><br>
+            <span class="small" style="color:#555; line-height:1.5;">
+                Compare how predicted cancer rates shift when a different distance
+                exponent is used. The map shows the signed difference
+                (primary k − comparison k) per census tract.
+            </span>
+            <br><br>
+
+            <!-- Displays the primary k that will serve as the reference in the comparison. -->
+            <div class="small" style="margin-bottom:6px;">
+                Primary k: <span id="primaryKDisplay" style="font-weight:bold; color:#1a4a8a;">(run an analysis first)</span>
+            </div>
+
+            <label class="small"><b>Comparison k:</b></label><br>
+            <input type="number" id="kCompareInput" min="0.1" step="0.1" value="3">
+            <button id="runCompareBtn" onclick="handleCompareClick()" disabled>Compare</button>
+            <br><br>
+
+            <!-- Quick-select preset buttons for the comparison k value. -->
+            <span class="small">Presets:</span><br>
+            <button class="preset-btn" data-compare-k="1.5">1.5</button>
+            <button class="preset-btn" data-compare-k="2">2</button>
+            <button class="preset-btn" data-compare-k="3">3</button>
+            <button class="preset-btn" data-compare-k="4">4</button>
+            <button class="preset-btn" data-compare-k="5">5</button>
+
+            <div id="compareStatus" class="small" style="color:#888; margin-top:6px;"></div>
+
+            <!-- Summary statistics shown after a comparison is built. -->
+            <div id="compareStats" class="small" style="margin-top:6px; display:none;">
+                <b>Difference summary (primary − comparison):</b><br>
+                <span id="compareStatsText"></span>
+            </div>
+        </div>
+
+        <hr>
+        <!-- Brief explanation of how the analysis pipeline works, shown to the user in the sidebar. -->
+        <div class="small">
+            <b>How this works</b><br><br>
+            Every time you change k and click "Run Analysis," the app re-reads the
+            well_nitrate points and re-runs inverse distance weighting from scratch
+            to build the nitrate surface, then re-samples that surface inside every
+            cancer zone and re-runs the regression. Results are only cached
+            <i>after</i> they've been computed once, so re-selecting a k you've
+            already run is instant, but the first run of any k is always a live
+            calculation from the source data.<br><br>
+            The <b>K Comparison</b> layer follows the same caching rules — if
+            either k value was already computed, comparing them requires no
+            additional IDW work.
+        </div>
+    </div>
+
+    <!-- Floating scatterplot panel showing mean nitrate vs. cancer rate per census tract.
+         Includes a red dashed regression line and the equation in the footer.
+         The panel can be dragged by its header to anywhere on the screen. -->
+    <div id="scatterPanel">
+        <div id="scatterHeader">
+            <span>Nitrate vs. Cancer Rate</span>
+            <button id="scatterCloseBtn" onclick="toggleScatter()" title="Close">✕</button>
+        </div>
+        <canvas id="scatterCanvas" width="316" height="240"></canvas>
+        <div id="scatterFooter">—</div>
+    </div>
+
+    <!-- Dynamic legend in the bottom-right corner.
+         Rebuilt automatically whenever layers are toggled on or off.
+         Each active layer gets its own color ramp and an opacity slider
+         that stays in sync with the matching sidebar slider. -->
+    <div class="legend" id="dynamicLegend">
+        <div id="legendEmpty" style="display:none; color:#888; font-size:11px;">
+            No analysis layers active.
+        </div>
+    </div>
+
+    <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+    <script src="https://unpkg.com/esri-leaflet"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Turf.js/6.5.0/turf.min.js"></script>
+    <script>
+
+        // ====================================================================
+        // CONFIG
+        // Central settings object storing file paths and raster resolution values.
+        // Adjusting these values here updates the behavior of the entire application.
+        // ====================================================================
+        const CONFIG = {
+            wellNitrateURL:      "well_nitrate.json",    /** well point data with nitrate concentrations */
+            cancerZonesURL:      "cancer_tracts.json",   /** census tract polygons with observed cancer rates */
+            stateBoundaryURL:    "StateBoundary.json",   /** Wisconsin state outline used to clip the IDW raster */
+            rasterCols:          160,                    /** number of horizontal pixels in the IDW raster grid */
+            rasterRows:          110,                    /** number of vertical pixels in the IDW raster grid */
+            zonalSamplesPerZone: 36                      /** number of sample points used to average nitrate inside each tract */
+        };
+
+        // ====================================================================
+        // MAP INITIALIZATION
+        // Creates the Leaflet map centered on Wisconsin and loads a label-free
+        // basemap underneath all the analysis overlays. CartoDB Positron's
+        // "no labels" variant is used so no place names/city names are baked
+        // into the tiles themselves — the only city names shown come from our
+        // own Wisconsin Cities reference layer, which we fully control.
+        // ====================================================================
+        var map = L.map('map').setView([44.5, -90], 7);
+        var basemap = L.tileLayer('https://{s}.basemaps.cartocdn.com/light_nolabels/{z}/{x}/{y}{r}.png', {
+            attribution: '© OpenStreetMap contributors © CARTO',
+            subdomains: 'abcd',
+            maxZoom: 19
+        }).addTo(map);
+
+        // ====================================================================
+        // CUSTOM PANES
+        // A dedicated pane for the Wisconsin Cities reference layer, given a
+        // higher z-index than the default overlay pane (400) that the analysis
+        // zone layers and IDW raster use. This guarantees the city markers and
+        // their labels always render above every analysis layer, regardless of
+        // which layers are toggled on or the order they were added in.
+        // ====================================================================
+        map.createPane('citiesPane');
+        map.getPane('citiesPane').style.zIndex = 650;
+        map.getPane('citiesPane').style.pointerEvents = 'auto';
+
+        // ====================================================================
+        // APPLICATION STATE
+        // These variables are shared across the application and persist between
+        // analysis runs. They store the loaded data, map layers, and cached results.
+        // ====================================================================
+        var wells = [];                   /** array of well points parsed from the nitrate dataset */
+        var zonesGeoJSON = null;          /** cancer tract polygons kept in memory for repeated use */
+        var stateBoundaryGeoJSON = null;  /** Wisconsin boundary used to mask the IDW raster */
+        var dataBounds = null;            /** bounding box used to position the map and build the raster grid */
+        var currentRasterOverlay = null;  /** the IDW raster image currently displayed on the map */
+
+        /** Layer groups for each of the six toggleable map overlays */
+        var cancerLayer      = L.layerGroup();  /** observed cancer rate by census tract */
+        var meanNitrateLayer = L.layerGroup();  /** IDW-derived mean nitrate per tract */
+        var predictedLayer   = L.layerGroup();  /** regression-predicted cancer rate per tract */
+        var residualLayer    = L.layerGroup();  /** difference between observed and predicted cancer rate */
+        var comparisonLayer  = L.layerGroup();  /** signed difference in predicted cancer rate between two k values */
+        var citiesLayer      = L.layerGroup();  /** labeled reference markers for significant Wisconsin cities */
+
+        var analysisCache = {};                              /** stores completed results by k value so re-runs are instant */
+        var cancerColorFn = function () { return "#cccccc"; }; /** color function for the cancer rate layer, set at startup */
+        var cancerBreaksForLegend = [];                      /** quantile break values used to build the dynamic legend */
+
+        var lastScatterData = null;  /** stores the most recent xs, ys, and regression result for scatterplot redraws */
+
+        /** Tracks the k value that was most recently applied as the primary analysis result.
+         *  The comparison section uses this to label which k is the reference side of the diff.
+         */
+        var currentPrimaryK = null;
+
+        /** Tracks the current opacity for each layer so the legend sliders can be pre-filled correctly. */
+        var layerOpacity = {
+            nitrateRaster: 0.7,
+            cancer:        0.7,
+            meanNitrate:   0.7,
+            predicted:     0.7,
+            residual:      0.7,
+            comparison:    0.7
+        };
+
+        /** Stores the most recent legend metadata for each zone-level layer so the legend
+         *  can be rebuilt whenever a layer is toggled without waiting for a new analysis run.
+         */
+        var legendMeta = {
+            nitrateRaster: null,  /** { min, max } for the continuous IDW raster */
+            cancer:        null,  /** array of { color, label } quantile buckets */
+            meanNitrate:   null,  /** array of { color, label } quantile buckets */
+            predicted:     null,  /** array of { color, label } quantile buckets */
+            residual:      null,  /** { maxAbs } for the diverging residual scale */
+            comparison:    null   /** { primaryK, compareK, maxAbs } for the diverging comparison scale */
+        };
+
+        // ====================================================================
+        // COLOR PALETTES
+        // Each map layer uses a distinct color palette so users can clearly
+        // distinguish between them when switching layers.
+        //   NITRATE_RASTER_STOPS  — purple to yellow, used for the continuous IDW surface
+        //   CANCER_PALETTE_HEX    — green to red, used for the observed cancer rate layer
+        //   NITRATE_PALETTE_HEX   — purple to orange, used for the zonal mean nitrate layer
+        //   PREDICTED_PALETTE_HEX — teal to gold, used for the regression-predicted cancer rate layer
+        //   Residuals use a diverging blue-white-crimson scale built dynamically
+        //   Comparison uses a diverging orange-white-teal scale built dynamically,
+        //     chosen to remain visually distinct from the blue-white-crimson residual scale
+        // ====================================================================
+
+        /** RGB color stops for the IDW nitrate raster, blended smoothly between values. */
+        const NITRATE_RASTER_STOPS = [
+            [68,  1,  84],   /** deep purple (low nitrate) */
+            [59,  82, 139],  /** blue */
+            [33, 145, 140],  /** teal */
+            [94, 201,  98],  /** green-yellow */
+            [253, 231, 37]   /** bright yellow (high nitrate) */
+        ];
+
+        /** Converts a nitrate value to an RGB color by interpolating between the two nearest color stops. */
+        function nitrateColorRGB(v, min, max) {
+            if (max === min) return NITRATE_RASTER_STOPS[2];
+            let t = Math.max(0, Math.min(1, (v - min) / (max - min)));
+            const n = NITRATE_RASTER_STOPS.length;
+            const scaled = t * (n - 1);
+            const i0 = Math.floor(scaled), i1 = Math.min(n - 1, i0 + 1);
+            const lt = scaled - i0;
+            const c0 = NITRATE_RASTER_STOPS[i0], c1 = NITRATE_RASTER_STOPS[i1];
+            return [
+                Math.round(c0[0] + (c1[0] - c0[0]) * lt),
+                Math.round(c0[1] + (c1[1] - c0[1]) * lt),
+                Math.round(c0[2] + (c1[2] - c0[2]) * lt)
+            ];
+        }
+
+        /** Hex color palettes for the zone-level layers. */
+        const CANCER_PALETTE_HEX    = ['#1a9850', '#91cf60', '#d9ef8b', '#fee08b', '#fc8d59', '#d73027'];
+        const NITRATE_PALETTE_HEX   = ['#54278f', '#756bb1', '#9e9ac8', '#fdbe85', '#fd8d3c', '#d94701'];
+        const PREDICTED_PALETTE_HEX = ['#00897b', '#4db6ac', '#b2dfdb', '#fff9c4', '#ffb300', '#e65100'];
+
+        /** Builds a stepped color function that maps a value to a palette color based on equal-width buckets. */
+        function makeQuantizedRamp(values, palette) {
+            const valid = values.filter(v => typeof v === "number" && !isNaN(v));
+            if (valid.length === 0) return () => "#cccccc";
+            const min = Math.min(...valid), max = Math.max(...valid);
+            const n = palette.length;
+            return function (v) {
+                if (typeof v !== "number" || isNaN(v)) return "#cccccc";
+                if (max === min) return palette[Math.floor(n / 2)];
+                let t = (v - min) / (max - min);
+                return palette[Math.min(n - 1, Math.floor(t * n))];
+            };
+        }
+
+        /** Blends two RGB color arrays together by a factor t, used to build the residual color scale. */
+        function interpolateRGB(c1, c2, t) {
+            return `rgb(${Math.round(c1[0] + (c2[0] - c1[0]) * t)},${Math.round(c1[1] + (c2[1] - c1[1]) * t)},${Math.round(c1[2] + (c2[2] - c1[2]) * t)})`;
+        }
+
+        /** Builds a diverging color function for the residuals layer.
+         *  Positive residuals (observed higher than predicted) shade toward crimson,
+         *  and negative residuals (observed lower than predicted) shade toward blue.
+         */
+        function makeResidualColorFn(values) {
+            const valid = values.filter(v => typeof v === "number" && !isNaN(v));
+            if (valid.length === 0) return () => "#cccccc";
+            const maxAbs = Math.max(...valid.map(Math.abs)) || 1;
+            return function (v) {
+                if (typeof v !== "number" || isNaN(v)) return "#cccccc";
+                const t = Math.max(-1, Math.min(1, v / maxAbs));
+                return t >= 0
+                    ? interpolateRGB([255, 255, 255], [178, 24,  43],  t)   /** white to crimson */
+                    : interpolateRGB([255, 255, 255], [ 33, 102, 172], -t); /** white to blue */
+            };
+        }
+
+        /** Builds a diverging color function for the k comparison layer.
+         *  Positive values (primary k predicts a higher rate) shade toward deep orange,
+         *  and negative values (comparison k predicts higher) shade toward dark teal.
+         *  This palette is intentionally distinct from the blue-crimson residual scale
+         *  so users can tell the two diverging layers apart at a glance.
+         */
+        function makeComparisonColorFn(values) {
+            const valid = values.filter(v => typeof v === "number" && !isNaN(v));
+            if (valid.length === 0) return () => "#cccccc";
+            const maxAbs = Math.max(...valid.map(Math.abs)) || 1;
+            return function (v) {
+                if (typeof v !== "number" || isNaN(v)) return "#cccccc";
+                const t = Math.max(-1, Math.min(1, v / maxAbs));
+                return t >= 0
+                    ? interpolateRGB([255, 255, 255], [215,  95,  0], t)    /** white to deep orange (primary predicts higher) */
+                    : interpolateRGB([255, 255, 255], [  0, 109, 100], -t); /** white to dark teal (comparison predicts higher) */
+            };
+        }
+
+        // ====================================================================
+        // FIELD READERS
+        // Small helper functions that read property values from GeoJSON features.
+        // These handle differences in field names between the county and tract datasets
+        // so the rest of the code does not need to account for them separately.
+        // ====================================================================
+        function getZoneID(p) {
+            if (p.GEOID10    !== undefined) return "GEOID10:"    + p.GEOID10;
+            if (p.COUNTY_FIP !== undefined) return "COUNTY_FIP:" + p.COUNTY_FIP;
+            if (p.FID        !== undefined) return "FID:"        + p.FID;
+            return JSON.stringify(p);
+        }
+        function getZoneLabel(p) {
+            if (p.GEOID10    !== undefined) return "Tract "  + p.GEOID10;
+            if (p.COUNTY_FIP !== undefined) return "County " + p.COUNTY_FIP;
+            return "Zone";
+        }
+        function getCanRate(p) {
+            if (typeof p.canrate === "number") return p.canrate;
+            var key = Object.keys(p).find(k => k.toLowerCase() === "canrate");
+            return key ? p[key] : undefined;
+        }
+
+        // ====================================================================
+        // DATA LOADING
+        // Loads a GeoJSON or JSON file from a given URL and returns it as a
+        // FeatureCollection. Falls back to the ESRI query API if the URL points
+        // to a feature service instead of a local file.
+        // ====================================================================
+        function resolveURL(url) {
+            /** Builds a full absolute URL from a relative path, used to produce clearer error messages. */
+            try { return new URL(url, window.location.href).href; } catch (e) { return url; }
+        }
+
+        function loadVectorLayer(url) {
+            if (!url || url.indexOf("REPLACE_WITH") === 0) return Promise.resolve(null);
+            const lower = url.toLowerCase();
+            if (lower.endsWith(".geojson") || lower.endsWith(".json")) {
+                const resolved = resolveURL(url);
+                return fetch(url).then(resp => {
+                    if (!resp.ok) throw new Error(
+                        "Could not load \"" + url + "\" (HTTP " + resp.status + ").\n" +
+                        "Looked here: " + resolved + "\n" +
+                        "Ensure the .geojson files are in the same folder as index.html " +
+                        "and are served via a local web server (VS Code Live Server, or " +
+                        "`python -m http.server`)."
+                    );
+                    return resp.json();
+                });
+            }
+            return new Promise((resolve, reject) => {
+                L.esri.query({ url }).where("1=1").fields(["*"]).run((err, fc) => {
+                    if (err) reject(err); else resolve(fc);
+                });
+            });
+        }
+
+        /** Converts the well_nitrate FeatureCollection into a simple array of {lat, lng, value} objects.
+         *  Any wells with missing or non-numeric values are filtered out before use.
+         */
+        function extractWells(fc) {
+            return fc.features.map(f => {
+                const coords = f.geometry.coordinates;
+                const raw    = f.properties.nitr_ran;
+                const val    = typeof raw === "number" ? raw : parseFloat(raw);
+                return { lat: coords[1], lng: coords[0], value: val };
+            }).filter(w => !isNaN(w.value) && !isNaN(w.lat) && !isNaN(w.lng));
+        }
+
+        /** Digs into a nested coordinate array to find the first actual coordinate pair.
+         *  Used by the coordinate validation check below.
+         */
+        function flattenFirstCoordinate(geometry) {
+            if (!geometry) return null;
+            let c = geometry.coordinates;
+            while (Array.isArray(c) && Array.isArray(c[0])) c = c[0];
+            return Array.isArray(c) && typeof c[0] === "number" ? c : null;
+        }
+
+        /** Checks whether the coordinates in a dataset look like valid WGS84 longitude and latitude.
+         *  Warns the user in the status bar if they appear to be in a projected coordinate system instead.
+         */
+        function checkLooksLikeLonLat(fc, label) {
+            if (!fc || !fc.features || fc.features.length === 0) return true;
+            const coords = flattenFirstCoordinate(fc.features[0].geometry);
+            if (!coords) return true;
+            const [x, y] = coords;
+            const ok = Math.abs(x) <= 180 && Math.abs(y) <= 90;
+            if (!ok) {
+                const msg = label + " coordinates (" + x.toFixed(1) + ", " + y.toFixed(1) +
+                    ") are outside WGS84 range — re-export with EPSG:4326.";
+                console.warn(msg); setRasterStatus("⚠ " + msg);
+            }
+            return ok;
+        }
+
+        // ====================================================================
+        // GEOMETRY HELPERS
+        // Utility functions used throughout the IDW and zonal analysis steps.
+        //   haversineKm       — calculates the real-world distance in kilometers
+        //                       between two lat/lng points using the haversine formula
+        //   pointInAnyFeature — checks whether a point falls inside any polygon
+        //                       in a FeatureCollection using the Turf.js library
+        //   computeDataBounds — calculates a padded bounding box that fits all
+        //                       wells and zone polygons, used to frame the map and raster
+        // ====================================================================
+        function haversineKm(lat1, lon1, lat2, lon2) {
+            const R    = 6371;
+            const dLat = (lat2 - lat1) * Math.PI / 180;
+            const dLon = (lon2 - lon1) * Math.PI / 180;
+            const a    = Math.sin(dLat / 2) ** 2 +
+                Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLon / 2) ** 2;
+            return 2 * R * Math.asin(Math.sqrt(a));
+        }
+
+        function pointInAnyFeature(lng, lat, fc) {
+            const pt = turf.point([lng, lat]);
+            return fc.features.some(f => { try { return turf.booleanPointInPolygon(pt, f); } catch (e) { return false; } });
+        }
+
+        function computeDataBounds() {
+            let minLat = 90, maxLat = -90, minLng = 180, maxLng = -180;
+            const consider = (lat, lng) => {
+                if (lat < minLat) minLat = lat; if (lat > maxLat) maxLat = lat;
+                if (lng < minLng) minLng = lng; if (lng > maxLng) maxLng = lng;
+            };
+            wells.forEach(w => consider(w.lat, w.lng));
+            if (zonesGeoJSON) zonesGeoJSON.features.forEach(f => {
+                const b = turf.bbox(f); consider(b[1], b[0]); consider(b[3], b[2]);
+            });
+            if (minLat > maxLat || minLng > maxLng) return L.latLngBounds([42.4, -93.0], [47.5, -86.2]);
+            const padLat = (maxLat - minLat) * 0.04 || 0.1, padLng = (maxLng - minLng) * 0.04 || 0.1;
+            return L.latLngBounds([minLat - padLat, minLng - padLng], [maxLat + padLat, maxLng + padLng]);
+        }
+
+        // ====================================================================
+        // INVERSE DISTANCE WEIGHTING (IDW)
+        // These three functions work together to produce the nitrate concentration
+        // surface shown on the map, and to aggregate that surface by census tract.
+        //
+        //   idwValueAt          — estimates the nitrate concentration at a single point
+        //                         by computing a weighted average of all wells, where
+        //                         each well's weight is 1 / distance^k
+        //   buildIDWRaster      — runs idwValueAt across a full grid of pixels to build
+        //                         the raster image, clips it to the state boundary,
+        //                         and returns a PNG data URL for Leaflet to display
+        //   computeZonalNitrate — estimates the average IDW nitrate value inside a
+        //                         single census tract by sampling a grid of points within
+        //                         the tract and averaging their IDW values
+        // ====================================================================
+        function idwValueAt(lat, lng, k) {
+            let ws = 0, wSum = 0;
+            for (let i = 0; i < wells.length; i++) {
+                const w = wells[i];
+                const d = haversineKm(lat, lng, w.lat, w.lng);
+                if (d < 0.01) return w.value;      /** if the point is directly on a well, return that well's value */
+                const wt = 1 / Math.pow(d, k);     /** IDW weight formula: 1 / d^k */
+                ws += wt * w.value; wSum += wt;
+            }
+            return wSum > 0 ? ws / wSum : null;
+        }
+
+        function buildIDWRaster(bounds, k) {
+            const cols  = CONFIG.rasterCols, rows = CONFIG.rasterRows;
+            const south = bounds.getSouth(), north = bounds.getNorth();
+            const west  = bounds.getWest(),  east  = bounds.getEast();
+            const grid  = new Float32Array(cols * rows);
+            let minV = Infinity, maxV = -Infinity;
+
+            /** Calculate an IDW nitrate value for every pixel in the grid.
+             *  Pixels that fall outside the Wisconsin boundary are left as NaN and rendered transparent.
+             */
+            for (let r = 0; r < rows; r++) {
+                const lat = north - (r + 0.5) / rows * (north - south);
+                for (let c = 0; c < cols; c++) {
+                    const lng = west + (c + 0.5) / cols * (east - west);
+                    let inB = true;
+                    if (stateBoundaryGeoJSON) inB = pointInAnyFeature(lng, lat, stateBoundaryGeoJSON);
+                    if (!inB) { grid[r * cols + c] = NaN; continue; }
+                    const v = idwValueAt(lat, lng, k);
+                    grid[r * cols + c] = v === null ? NaN : v;
+                    if (v !== null) { if (v < minV) minV = v; if (v > maxV) maxV = v; }
+                }
+            }
+
+            /** Paint the computed grid onto an off-screen canvas using the nitrate color palette,
+             *  then export it as a PNG data URL that Leaflet can place over the map as an image overlay.
+             */
+            const canvas = document.createElement("canvas");
+            canvas.width = cols; canvas.height = rows;
+            const ctx = canvas.getContext("2d");
+            const img = ctx.createImageData(cols, rows);
+            for (let i = 0; i < grid.length; i++) {
+                const v = grid[i], idx = i * 4;
+                if (isNaN(v)) { img.data[idx + 3] = 0; continue; }
+                const [r, g, b] = nitrateColorRGB(v, minV, maxV);
+                img.data[idx] = r; img.data[idx + 1] = g; img.data[idx + 2] = b; img.data[idx + 3] = 225;
+            }
+            ctx.putImageData(img, 0, 0);
+            return { dataURL: canvas.toDataURL(), min: minV === Infinity ? null : minV, max: maxV === -Infinity ? null : maxV };
+        }
+
+        function computeZonalNitrate(zoneFeature, k, targetSamples) {
+            const bbox    = turf.bbox(zoneFeature);
+            const gridDim = Math.max(2, Math.ceil(Math.sqrt(targetSamples)));
+            const collected = [];
+
+            /** Place a regular grid of sample points over the tract's bounding box,
+             *  then keep only the points that land inside the actual tract polygon.
+             */
+            for (let i = 0; i < gridDim; i++) {
+                const lng = bbox[0] + (i + 0.5) / gridDim * (bbox[2] - bbox[0]);
+                for (let j = 0; j < gridDim; j++) {
+                    const lat = bbox[1] + (j + 0.5) / gridDim * (bbox[3] - bbox[1]);
+                    if (turf.booleanPointInPolygon(turf.point([lng, lat]), zoneFeature)) collected.push([lat, lng]);
+                }
+            }
+            /** If no grid points landed inside the polygon, fall back to using the centroid. */
+            if (collected.length === 0) {
+                const c = turf.centroid(zoneFeature).geometry.coordinates;
+                collected.push([c[1], c[0]]);
+            }
+            const vals = collected.map(p => idwValueAt(p[0], p[1], k)).filter(v => v !== null);
+            if (vals.length === 0) return null;
+            return vals.reduce((a, b) => a + b, 0) / vals.length;
+        }
+
+        // ====================================================================
+        // LINEAR REGRESSION (OLS)
+        // Performs a simple ordinary least squares regression of cancer rate (y)
+        // against mean nitrate concentration (x) across all census tracts.
+        // Returns the slope, intercept, R-squared value, and number of observations.
+        // ====================================================================
+        function linearRegression(xs, ys) {
+            const n = xs.length;
+            if (n < 2) return { slope: 0, intercept: ys[0] || 0, r2: 0, n };
+            const sumX  = xs.reduce((a, b) => a + b, 0);
+            const sumY  = ys.reduce((a, b) => a + b, 0);
+            const sumXY = xs.reduce((s, x, i) => s + x * ys[i], 0);
+            const sumXX = xs.reduce((s, x) => s + x * x, 0);
+            const denom = n * sumXX - sumX * sumX;
+            const slope     = denom !== 0 ? (n * sumXY - sumX * sumY) / denom : 0;
+            const intercept = (sumY - slope * sumX) / n;
+            const yMean  = sumY / n;
+            const ssTot  = ys.reduce((s, y) => s + (y - yMean) ** 2, 0);
+            const ssRes  = ys.reduce((s, y, i) => s + (y - (slope * xs[i] + intercept)) ** 2, 0);
+            const r2     = ssTot !== 0 ? 1 - ssRes / ssTot : 0;
+            return { slope, intercept, r2, n };
+        }
+
+        // ====================================================================
+        // SCATTERPLOT
+        // Draws the nitrate vs. cancer rate scatterplot using the browser's
+        // built-in Canvas 2D drawing API, without any external charting libraries.
+        // Each dot represents one census tract, and a red dashed line shows the
+        // regression fit. The plot is redrawn from scratch every time it is opened
+        // or the analysis is updated.
+        //
+        // toggleScatter shows or hides the floating panel and triggers a redraw when opened.
+        // The drag logic at the bottom lets users reposition the panel by its header.
+        // ====================================================================
+        function drawScatterplot(xs, ys, reg) {
+            const canvas = document.getElementById("scatterCanvas");
+            const ctx    = canvas.getContext("2d");
+            const W = canvas.width, H = canvas.height;
+            const PAD = { top: 20, right: 20, bottom: 40, left: 52 };
+
+            ctx.clearRect(0, 0, W, H);
+
+            if (!xs || xs.length === 0) return;
+
+            const minX = Math.min(...xs), maxX = Math.max(...xs);
+            const minY = Math.min(...ys), maxY = Math.max(...ys);
+            const rangeX = maxX - minX || 1, rangeY = maxY - minY || 1;
+
+            const plotW = W - PAD.left - PAD.right;
+            const plotH = H - PAD.top  - PAD.bottom;
+
+            /** Converts a data value pair into pixel coordinates on the canvas. */
+            function toPixel(x, y) {
+                return [
+                    PAD.left + (x - minX) / rangeX * plotW,
+                    PAD.top  + (1 - (y - minY) / rangeY) * plotH
+                ];
+            }
+
+            /** Draw the plot background. */
+            ctx.fillStyle = "#fafafa";
+            ctx.fillRect(PAD.left, PAD.top, plotW, plotH);
+
+            /** Draw light grid lines across the plot area. */
+            ctx.strokeStyle = "#e0e0e0";
+            ctx.lineWidth   = 1;
+            const nGrid = 4;
+            for (let i = 0; i <= nGrid; i++) {
+                const x = PAD.left + i / nGrid * plotW;
+                const y = PAD.top  + i / nGrid * plotH;
+                ctx.beginPath(); ctx.moveTo(x, PAD.top);        ctx.lineTo(x, PAD.top + plotH); ctx.stroke();
+                ctx.beginPath(); ctx.moveTo(PAD.left, y);       ctx.lineTo(PAD.left + plotW, y); ctx.stroke();
+            }
+
+            /** Draw the x and y axis lines. */
+            ctx.strokeStyle = "#555"; ctx.lineWidth = 1.5;
+            ctx.beginPath();
+            ctx.moveTo(PAD.left, PAD.top); ctx.lineTo(PAD.left, PAD.top + plotH);
+            ctx.lineTo(PAD.left + plotW,   PAD.top + plotH);
+            ctx.stroke();
+
+            /** Draw axis labels. */
+            ctx.fillStyle = "#333"; ctx.font = "10px Arial"; ctx.textAlign = "center";
+            ctx.fillText("Mean Nitrate (mg/L)", PAD.left + plotW / 2, H - 6);
+            ctx.save();
+            ctx.translate(13, PAD.top + plotH / 2);
+            ctx.rotate(-Math.PI / 2);
+            ctx.fillText("Cancer Rate", 0, 0);
+            ctx.restore();
+
+            /** Draw numeric tick labels on both axes. */
+            ctx.font = "9px Arial"; ctx.textAlign = "center"; ctx.fillStyle = "#555";
+            for (let i = 0; i <= nGrid; i++) {
+                const val = minX + i / nGrid * rangeX;
+                const px  = PAD.left + i / nGrid * plotW;
+                ctx.fillText(val.toFixed(1), px, PAD.top + plotH + 13);
+            }
+            ctx.textAlign = "right";
+            for (let i = 0; i <= nGrid; i++) {
+                const val = minY + (1 - i / nGrid) * rangeY;
+                const py  = PAD.top + i / nGrid * plotH;
+                ctx.fillText(val.toFixed(4), PAD.left - 4, py + 3);
+            }
+
+            /** Draw the regression line as a red dashed line spanning the full x range. */
+            if (reg && reg.n >= 2) {
+                const [x1, y1] = toPixel(minX, reg.intercept + reg.slope * minX);
+                const [x2, y2] = toPixel(maxX, reg.intercept + reg.slope * maxX);
+                ctx.strokeStyle = "#d73027"; ctx.lineWidth = 2;
+                ctx.setLineDash([5, 3]);
+                ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
+                ctx.setLineDash([]);
+            }
+
+            /** Draw one circle per census tract representing its mean nitrate and cancer rate values. */
+            for (let i = 0; i < xs.length; i++) {
+                const [px, py] = toPixel(xs[i], ys[i]);
+                ctx.beginPath();
+                ctx.arc(px, py, 3.5, 0, 2 * Math.PI);
+                ctx.fillStyle   = "rgba(59, 130, 174, 0.65)";
+                ctx.strokeStyle = "rgba(30, 80, 120, 0.8)";
+                ctx.lineWidth   = 0.8;
+                ctx.fill(); ctx.stroke();
+            }
+
+            /** Write the regression equation and R² into the footer of the scatterplot panel. */
+            const footer = document.getElementById("scatterFooter");
+            if (reg && reg.n >= 2) {
+                footer.innerHTML =
+                    "CancerRate = " + reg.intercept.toFixed(5) +
+                    " + " + reg.slope.toFixed(5) + " × Nitrate" +
+                    " &nbsp;|&nbsp; R² = " + reg.r2.toFixed(3) +
+                    " &nbsp;(n = " + reg.n + ")";
+            }
+        }
+
+        var scatterVisible = false;
+
+        /** Shows or hides the scatterplot panel and redraws the chart if it is being opened. */
+        function toggleScatter() {
+            const panel = document.getElementById("scatterPanel");
+            const btn   = document.getElementById("scatterToggleBtn");
+            scatterVisible = !scatterVisible;
+            panel.style.display = scatterVisible ? "block" : "none";
+            btn.textContent = scatterVisible ? "📈 Hide Scatterplot" : "📈 Show Scatterplot";
+            if (scatterVisible && lastScatterData) {
+                drawScatterplot(lastScatterData.xs, lastScatterData.ys, lastScatterData.reg);
+            }
+        }
+
+        /** Makes the scatterplot panel draggable by attaching mouse event listeners to its header bar. */
+        (function () {
+            const panel  = document.getElementById("scatterPanel");
+            const header = document.getElementById("scatterHeader");
+            let dragging = false, startX, startY, origLeft, origBottom;
+
+            header.addEventListener("mousedown", function (e) {
+                if (e.target.id === "scatterCloseBtn") return;
+                dragging = true;
+                startX = e.clientX; startY = e.clientY;
+                const rect  = panel.getBoundingClientRect();
+                origLeft    = rect.left;
+                origBottom  = window.innerHeight - rect.bottom;
+                panel.style.left   = origLeft   + "px";
+                panel.style.bottom = origBottom + "px";
+                e.preventDefault();
+            });
+            document.addEventListener("mousemove", function (e) {
+                if (!dragging) return;
+                const dx = e.clientX - startX, dy = e.clientY - startY;
+                panel.style.left   = (origLeft   + dx) + "px";
+                panel.style.bottom = (origBottom - dy) + "px";
+            });
+            document.addEventListener("mouseup", () => { dragging = false; });
+        })();
+
+        // ====================================================================
+        // DYNAMIC LEGEND
+        // The legend in the bottom-right corner rebuilds itself every time
+        // a layer is toggled on or off, or when new analysis results arrive.
+        // Each active layer gets its own titled section showing color swatches
+        // with value labels, plus an opacity slider that stays in sync with
+        // the matching sidebar slider.
+        //
+        //   buildLegendNitrateRaster — renders the continuous purple-to-yellow ramp
+        //                             using five sample stops between the actual min and max values
+        //   buildLegendSwatches      — renders a column of color-swatch rows for any
+        //                             layer whose metadata is an array of {color, label} buckets
+        //   buildLegendResidual      — renders a three-stop diverging blue-white-crimson ramp
+        //                             labeled with the actual max absolute residual value
+        //   buildLegendComparison    — renders a three-stop diverging orange-white-teal ramp
+        //                             labeled with the two k values being compared
+        //   rebuildDynamicLegend     — reads the current toggle states and legendMeta values,
+        //                             then writes fresh HTML into the legend container
+        // ====================================================================
+
+        /** Builds the HTML for the continuous nitrate raster legend section.
+         *  Shows five color stops evenly spaced between the recorded min and max values.
+         */
+        function buildLegendNitrateRaster(meta) {
+            if (!meta || meta.min === null) return "";
+            const { min, max } = meta;
+            const steps  = 5;
+            let html = '<div class="legend-section">';
+            html += '<div class="legend-section-title">Nitrate Surface (IDW)</div>';
+            html += '<div style="font-size:10px;color:#888;margin-bottom:4px;">mg/L</div>';
+            for (let i = steps - 1; i >= 0; i--) {
+                const v   = min + (i / (steps - 1)) * (max - min);
+                const rgb = nitrateColorRGB(v, min, max);
+                html += '<div class="legend-swatch-row">' +
+                    '<div class="legend-swatch" style="background:rgb(' + rgb[0] + ',' + rgb[1] + ',' + rgb[2] + ');"></div>' +
+                    '<span>' + v.toFixed(2) + '</span>' +
+                    '</div>';
+            }
+            html += buildLegendOpacitySlider("legendNitrateRasterOpacity", layerOpacity.nitrateRaster, "nitrateRaster");
+            html += '</div>';
+            return html;
+        }
+
+        /** Builds the HTML for a stepped-palette legend section from an array of {color, label} buckets.
+         *  Used for the cancer rate, mean nitrate, and predicted cancer rate layers.
+         */
+        function buildLegendSwatches(title, buckets, opacityKey, legendSliderId) {
+            if (!buckets || buckets.length === 0) return "";
+            let html = '<div class="legend-section">';
+            html += '<div class="legend-section-title">' + title + '</div>';
+            /** Render buckets from highest to lowest so the darkest color appears at the top. */
+            for (let i = buckets.length - 1; i >= 0; i--) {
+                const b = buckets[i];
+                html += '<div class="legend-swatch-row">' +
+                    '<div class="legend-swatch" style="background:' + b.color + ';"></div>' +
+                    '<span>' + b.label + '</span>' +
+                    '</div>';
+            }
+            html += buildLegendOpacitySlider(legendSliderId, layerOpacity[opacityKey], opacityKey);
+            html += '</div>';
+            return html;
+        }
+
+        /** Builds the HTML for the diverging residuals legend section.
+         *  Shows three stops: blue (most negative), white (zero), and crimson (most positive),
+         *  labeled with the maximum absolute residual value from the last analysis run.
+         */
+        function buildLegendResidual(meta) {
+            if (!meta) return "";
+            const maxAbs = meta.maxAbs;
+            const stops  = [
+                { color: "rgb(33,102,172)",  label: "−" + maxAbs.toFixed(4) + " (lower than predicted)" },
+                { color: "rgb(255,255,255)", label: "0  (matches prediction)" },
+                { color: "rgb(178,24,43)",   label: "+" + maxAbs.toFixed(4) + " (higher than predicted)" }
+            ];
+            let html = '<div class="legend-section">';
+            html += '<div class="legend-section-title">Residuals (obs − pred)</div>';
+            for (let i = stops.length - 1; i >= 0; i--) {
+                const s = stops[i];
+                html += '<div class="legend-swatch-row">' +
+                    '<div class="legend-swatch" style="background:' + s.color + ';"></div>' +
+                    '<span>' + s.label + '</span>' +
+                    '</div>';
+            }
+            html += buildLegendOpacitySlider("legendResidualOpacity", layerOpacity.residual, "residual");
+            html += '</div>';
+            return html;
+        }
+
+        /** Builds the HTML for the k comparison diverging legend section.
+         *  Shows three stops using the orange-white-teal scale, labeled with the
+         *  primary and comparison k values so users can read the map without referring
+         *  back to the sidebar controls.
+         */
+        function buildLegendComparison(meta) {
+            if (!meta) return "";
+            const { primaryK, compareK, maxAbs } = meta;
+            const stops = [
+                { color: "rgb(0,109,100)",   label: "−" + maxAbs.toFixed(5) + " (k=" + compareK + " higher)" },
+                { color: "rgb(255,255,255)", label: "≈ 0  (k values agree)" },
+                { color: "rgb(215,95,0)",    label: "+" + maxAbs.toFixed(5) + " (k=" + primaryK + " higher)" }
+            ];
+            let html = '<div class="legend-section">';
+            html += '<div class="legend-section-title">K Comparison (k=' + primaryK + ' − k=' + compareK + ')</div>';
+            html += '<div style="font-size:10px;color:#888;margin-bottom:4px;">Difference in predicted cancer rate</div>';
+            for (let i = stops.length - 1; i >= 0; i--) {
+                const s = stops[i];
+                html += '<div class="legend-swatch-row">' +
+                    '<div class="legend-swatch" style="background:' + s.color + '; border-color:#888;"></div>' +
+                    '<span>' + s.label + '</span>' +
+                    '</div>';
+            }
+            html += buildLegendOpacitySlider("legendComparisonOpacity", layerOpacity.comparison, "comparison");
+            html += '</div>';
+            return html;
+        }
+
+        /** Builds the HTML for an opacity slider row embedded inside a legend section.
+         *  The slider id and the opacityKey are used to wire up the event listener after
+         *  the legend HTML is injected into the DOM.
+         */
+        function buildLegendOpacitySlider(sliderId, currentValue, opacityKey) {
+            return '<div class="legend-opacity-row">' +
+                '<span>Opacity</span>' +
+                '<input type="range" id="' + sliderId + '" min="0" max="1" step="0.05"' +
+                '  value="' + currentValue + '"' +
+                '  data-opacity-key="' + opacityKey + '">' +
+                '<span id="' + sliderId + 'Val">' + Math.round(currentValue * 100) + '%</span>' +
+                '</div>';
+        }
+
+        /** Rebuilds the entire legend container based on which layers are currently toggled on.
+         *  Called whenever a layer toggle changes or new analysis results are stored in legendMeta.
+         */
+        function rebuildDynamicLegend() {
+            const nitrateOn    = document.getElementById("nitrateRasterToggle").checked;
+            const cancerOn     = document.getElementById("cancerToggle").checked;
+            const meanNitOn    = document.getElementById("meanNitrateToggle").checked;
+            const predictedOn  = document.getElementById("predictedToggle").checked;
+            const residualOn   = document.getElementById("residualToggle").checked;
+            const comparisonOn = document.getElementById("comparisonToggle").checked;
+
+            let html   = "";
+            let hasAny = false;
+
+            if (nitrateOn    && legendMeta.nitrateRaster) { html += buildLegendNitrateRaster(legendMeta.nitrateRaster); hasAny = true; }
+            if (cancerOn     && legendMeta.cancer)         { html += buildLegendSwatches("Cancer Rate (observed)", legendMeta.cancer,      "cancer",      "legendCancerOpacity");       hasAny = true; }
+            if (meanNitOn    && legendMeta.meanNitrate)    { html += buildLegendSwatches("Mean Nitrate by Zone",   legendMeta.meanNitrate,  "meanNitrate", "legendMeanNitrateOpacity");  hasAny = true; }
+            if (predictedOn  && legendMeta.predicted)      { html += buildLegendSwatches("Predicted Cancer Rate",  legendMeta.predicted,    "predicted",   "legendPredictedOpacity");    hasAny = true; }
+            if (residualOn   && legendMeta.residual)       { html += buildLegendResidual(legendMeta.residual);   hasAny = true; }
+            if (comparisonOn && legendMeta.comparison)     { html += buildLegendComparison(legendMeta.comparison); hasAny = true; }
+
+            const container = document.getElementById("dynamicLegend");
+            container.innerHTML = html;
+
+            /** Show a placeholder message when no analysis layers are currently active. */
+            if (!hasAny) {
+                container.innerHTML = '<div id="legendEmpty" style="color:#888;font-size:11px;">No analysis layers active.</div>';
+            }
+
+            /** Wire up all opacity sliders injected into the legend.
+             *  Each slider mirrors the corresponding sidebar slider and updates the actual layer opacity.
+             */
+            container.querySelectorAll("input[type='range'][data-opacity-key]").forEach(slider => {
+                const key = slider.dataset.opacityKey;
+                slider.addEventListener("input", function () {
+                    const val  = parseFloat(this.value);
+                    const valId = this.id + "Val";
+                    const valEl = document.getElementById(valId);
+                    if (valEl) valEl.textContent = Math.round(val * 100) + "%";
+                    applyLayerOpacity(key, val);
+                    syncSidebarSlider(key, val);
+                });
+            });
+        }
+
+        // ====================================================================
+        // LAYER OPACITY MANAGEMENT
+        // applyLayerOpacity sets the actual Leaflet opacity for a given layer key.
+        // syncSidebarSlider keeps the sidebar and legend opacity inputs in sync so
+        // dragging one slider automatically updates the other.
+        // ====================================================================
+
+        /** Applies an opacity value to the Leaflet layer identified by key. */
+        function applyLayerOpacity(key, val) {
+            layerOpacity[key] = val;
+            if (key === "nitrateRaster") {
+                if (currentRasterOverlay) currentRasterOverlay.setOpacity(val);
+            } else {
+                /** For GeoJSON zone layers, re-style every individual path element
+                 *  because Leaflet does not expose a single setOpacity method on layerGroups.
+                 */
+                const targetLayer =
+                    key === "cancer"      ? cancerLayer      :
+                    key === "meanNitrate" ? meanNitrateLayer :
+                    key === "predicted"   ? predictedLayer   :
+                    key === "residual"    ? residualLayer     :
+                    key === "comparison"  ? comparisonLayer   : null;
+                if (targetLayer) {
+                    targetLayer.eachLayer(function (gl) {
+                        if (gl.eachLayer) {
+                            gl.eachLayer(function (path) {
+                                if (path.setStyle) path.setStyle({ fillOpacity: val, opacity: Math.min(1, val + 0.15) });
+                            });
+                        } else if (gl.setStyle) {
+                            gl.setStyle({ fillOpacity: val, opacity: Math.min(1, val + 0.15) });
+                        }
+                    });
+                }
+            }
+        }
+
+        /** Updates the sidebar opacity slider and its percentage label to match a new value.
+         *  Called whenever the user drags the matching legend slider, so both stay in sync.
+         */
+        function syncSidebarSlider(key, val) {
+            const ids = {
+                nitrateRaster: { slider: "opacitySlider",            label: "nitrateRasterOpacityVal" },
+                cancer:        { slider: "cancerOpacitySlider",      label: "cancerOpacityVal"        },
+                meanNitrate:   { slider: "meanNitrateOpacitySlider", label: "meanNitrateOpacityVal"   },
+                predicted:     { slider: "predictedOpacitySlider",   label: "predictedOpacityVal"     },
+                residual:      { slider: "residualOpacitySlider",    label: "residualOpacityVal"      },
+                comparison:    { slider: "comparisonOpacitySlider",  label: "comparisonOpacityVal"    }
+            };
+            const map = ids[key];
+            if (!map) return;
+            const sliderEl = document.getElementById(map.slider);
+            const labelEl  = document.getElementById(map.label);
+            if (sliderEl) sliderEl.value = val;
+            if (labelEl)  labelEl.textContent = Math.round(val * 100) + "%";
+        }
+
+        // ====================================================================
+        // ANALYSIS PIPELINE
+        // runAnalysisForK is the main function called whenever the user clicks
+        // "Run Analysis" or selects a preset k value. It runs the full pipeline:
+        //   1. Check the cache — if this k was already run, apply the result instantly
+        //   2. Build the IDW raster from the well point data
+        //   3. Sample the IDW surface inside each census tract to get a mean nitrate value
+        //   4. Run linear regression of cancer rate against mean nitrate
+        //   5. Calculate predicted and residual values for each tract
+        //   6. Cache the result and update all map layers, the sidebar, and the legend
+        //
+        // nextFrame yields to the browser between steps so the UI stays responsive
+        // and the status message can update before the heavy computation begins.
+        // ====================================================================
+        function nextFrame() {
+            return new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+        }
+
+        async function runAnalysisForK(kRaw) {
+            const k      = String(parseFloat(kRaw));
+            const runBtn = document.getElementById("runBtn");
+
+            /** If this k value has already been computed, load the cached result immediately. */
+            if (analysisCache[k]) {
+                applyAnalysisResult(k, analysisCache[k]);
+                setRasterStatus("Loaded k=" + k + " from cache (computed earlier this session).");
+                return;
+            }
+
+            runBtn.disabled = true;
+            setRasterStatus("Running IDW + regression for k = " + k + " from source data…");
+            await nextFrame();
+
+            try {
+                const kNum = parseFloat(k);
+
+                /** Step 1: build the IDW raster image from the well point data. */
+                const raster = buildIDWRaster(dataBounds, kNum);
+
+                /** Step 2: calculate the mean IDW nitrate value inside each census tract. */
+                const nitrateByZone   = {};
+                const predictedByZone = {};
+                const residualByZone  = {};
+                const xs = [], ys = [], ids = [];
+
+                zonesGeoJSON.features.forEach(f => {
+                    const id    = getZoneID(f.properties);
+                    const meanN = computeZonalNitrate(f, kNum, CONFIG.zonalSamplesPerZone);
+                    nitrateByZone[id] = meanN;
+                    const cr = getCanRate(f.properties);
+                    /** Only include tracts where both the cancer rate and mean nitrate are valid numbers. */
+                    if (typeof cr === "number" && meanN !== null && !isNaN(meanN)) {
+                        xs.push(meanN); ys.push(cr); ids.push(id);
+                    }
+                });
+
+                /** Step 3: run OLS regression of cancer rate against mean nitrate. */
+                const reg = linearRegression(xs, ys);
+
+                /** Step 4: store the predicted cancer rate and residual for each tract. */
+                for (let i = 0; i < ids.length; i++) {
+                    const pred = reg.intercept + reg.slope * xs[i];
+                    predictedByZone[ids[i]] = pred;
+                    residualByZone[ids[i]]  = ys[i] - pred;  /** positive means observed exceeded predicted */
+                }
+
+                const result = { raster, nitrateByZone, predictedByZone, residualByZone, regression: reg, xs, ys };
+                analysisCache[k] = result;  /** cache the result so this k value runs instantly next time */
+
+                applyAnalysisResult(k, result);
+                setRasterStatus("");
+
+            } catch (err) {
+                console.error(err);
+                setRasterStatus("⚠ Analysis failed — see browser console for details.");
+            } finally {
+                runBtn.disabled = false;
+            }
+        }
+
+        function setRasterStatus(text) {
+            document.getElementById("rasterStatus").innerHTML = text;
+        }
+
+        /** Applies a completed analysis result to the map, sidebar, and dynamic legend.
+         *  Swaps in the new IDW raster overlay, updates the regression box,
+         *  rebuilds all three zone-level layers, stores legend metadata, and
+         *  refreshes the scatterplot and legend if they are currently visible.
+         *  Also updates the comparison section header to reflect the new primary k.
+         */
+        function applyAnalysisResult(k, result) {
+            /** Track the primary k value so the comparison section always shows the right reference. */
+            currentPrimaryK = k;
+            document.getElementById("primaryKDisplay").textContent = "k = " + k;
+            document.getElementById("runCompareBtn").disabled = false;
+
+            /** Replace the existing raster overlay with the newly computed one at the current opacity setting. */
+            if (currentRasterOverlay) map.removeLayer(currentRasterOverlay);
+            const nitrateVisible = document.getElementById("nitrateRasterToggle").checked;
+            currentRasterOverlay = L.imageOverlay(result.raster.dataURL, dataBounds, { opacity: layerOpacity.nitrateRaster });
+            if (nitrateVisible) currentRasterOverlay.addTo(map);
+
+            const rangeText = result.raster.min !== null
+                ? "Surface range at k=" + k + ": " + result.raster.min.toFixed(2) + " – " + result.raster.max.toFixed(2) + " mg/L"
+                : "";
+            document.getElementById("nitrateRangeInfo").innerHTML = rangeText;
+
+            updateRegressionBox(result.regression);
+            rebuildMeanNitrateLayer(result.nitrateByZone,  result.predictedByZone, result.residualByZone);
+            rebuildPredictedLayer(result.predictedByZone,  result.nitrateByZone,   result.residualByZone);
+            rebuildResidualLayer(result.residualByZone,    result.nitrateByZone,   result.predictedByZone);
+
+            /** Store legend metadata for each layer so the legend can be rebuilt on demand. */
+            legendMeta.nitrateRaster = { min: result.raster.min, max: result.raster.max };
+            legendMeta.meanNitrate   = buildQuantileBuckets(Object.values(result.nitrateByZone),   NITRATE_PALETTE_HEX,   "mg/L");
+            legendMeta.predicted     = buildQuantileBuckets(Object.values(result.predictedByZone), PREDICTED_PALETTE_HEX, "");
+            const residVals          = Object.values(result.residualByZone).filter(v => typeof v === "number" && !isNaN(v));
+            legendMeta.residual      = residVals.length > 0 ? { maxAbs: Math.max(...residVals.map(Math.abs)) || 1 } : null;
+
+            lastScatterData = { xs: result.xs, ys: result.ys, reg: result.regression };
+            document.getElementById("scatterToggleBtn").style.display = "inline-block";
+            if (scatterVisible) drawScatterplot(result.xs, result.ys, result.regression);
+
+            /** Update the comparison toggle label to reflect the new primary k whenever
+             *  a comparison layer is already built and on display.
+             */
+            if (legendMeta.comparison) {
+                legendMeta.comparison.primaryK = k;
+                updateComparisonToggleLabel(k, legendMeta.comparison.compareK);
+            }
+
+            rebuildDynamicLegend();
+        }
+
+        /** Updates the regression results box in the sidebar with the equation, R², and tract count. */
+        function updateRegressionBox(reg) {
+            document.getElementById("regressionBox").innerHTML =
+                "<b>Regression Results</b><br><br>" +
+                "CancerRate = " + reg.intercept.toFixed(5) +
+                " + " + reg.slope.toFixed(5) + " × Nitrate" +
+                "<br><br>R² = " + reg.r2.toFixed(3) +
+                "<br>n = " + reg.n + " zones";
+        }
+
+        /** Builds a {color, label} bucket array for the legend from a set of numeric values and a palette.
+         *  Uses the same equal-width bucket logic as makeQuantizedRamp so the legend matches the map colors.
+         */
+        function buildQuantileBuckets(values, palette, unit) {
+            const valid = values.filter(v => typeof v === "number" && !isNaN(v));
+            if (valid.length === 0) return [];
+            const min = Math.min(...valid), max = Math.max(...valid);
+            const n   = palette.length;
+            return palette.map((color, i) => {
+                const lo = min + (i / n) * (max - min);
+                const hi = min + ((i + 1) / n) * (max - min);
+                const suffix = unit ? " " + unit : "";
+                const label  = i === 0       ? "≤ " + hi.toFixed(3) + suffix
+                             : i === n - 1   ? "> " + lo.toFixed(3) + suffix
+                             :                lo.toFixed(3) + " – " + hi.toFixed(3) + suffix;
+                return { color, label };
+            });
+        }
+
+        /** Builds the popup HTML for a census tract, showing the observed cancer rate,
+         *  mean nitrate, predicted cancer rate, and residual. Displays N/A for any missing values.
+         */
+        function buildZonePopup(f, nitrateByZone, predictedByZone, residualByZone) {
+            const id    = getZoneID(f.properties);
+            const cr    = getCanRate(f.properties);
+            const meanN = nitrateByZone  ? nitrateByZone[id]  : undefined;
+            const pred  = predictedByZone ? predictedByZone[id] : undefined;
+            const res   = residualByZone  ? residualByZone[id]  : undefined;
+
+            return "<b>" + getZoneLabel(f.properties) + "</b>" +
+                "<br><b>Observed cancer rate:</b> " +
+                (typeof cr   === "number" ? cr.toFixed(5) : "N/A") +
+                "<br><b>Mean nitrate:</b> " +
+                (typeof meanN === "number" ? meanN.toFixed(2) + " mg/L" : "N/A") +
+                "<br><b>Predicted cancer rate:</b> " +
+                (typeof pred === "number" ? pred.toFixed(5) : "N/A") +
+                "<br><b>Residual (obs − pred):</b> " +
+                (typeof res  === "number" ? (res >= 0 ? "+" : "") + res.toFixed(5) : "N/A");
+        }
+
+        /** Builds the popup HTML for a census tract in the comparison layer.
+         *  Shows the predicted cancer rate under each k and the signed difference between them,
+         *  with a plain-language label indicating which k produces the higher prediction.
+         */
+        function buildComparisonPopup(f, primaryPredByZone, comparePredByZone, diffByZone, primaryK, compareK) {
+            const id       = getZoneID(f.properties);
+            const primPred = primaryPredByZone[id];
+            const compPred = comparePredByZone[id];
+            const diff     = diffByZone[id];
+
+            let diffLine = "N/A";
+            if (typeof diff === "number") {
+                const sign      = diff >= 0 ? "+" : "";
+                const direction = diff > 0.000005
+                    ? " (k=" + primaryK + " predicts higher)"
+                    : diff < -0.000005
+                        ? " (k=" + compareK + " predicts higher)"
+                        : " (k values agree closely)";
+                diffLine = sign + diff.toFixed(6) + direction;
+            }
+
+            return "<b>" + getZoneLabel(f.properties) + "</b>" +
+                "<br><b>Predicted rate (k=" + primaryK + "):</b> " +
+                (typeof primPred === "number" ? primPred.toFixed(6) : "N/A") +
+                "<br><b>Predicted rate (k=" + compareK + "):</b> " +
+                (typeof compPred === "number" ? compPred.toFixed(6) : "N/A") +
+                "<br><b>Difference (primary − comparison):</b> " + diffLine;
+        }
+
+        /** Clears and rebuilds the mean nitrate zone layer using the purple-to-orange palette.
+         *  Each tract is colored by its IDW-derived average nitrate concentration.
+         */
+        function rebuildMeanNitrateLayer(nitrateByZone, predictedByZone, residualByZone) {
+            meanNitrateLayer.clearLayers();
+            const colorFn = makeQuantizedRamp(Object.values(nitrateByZone), NITRATE_PALETTE_HEX);
+            const fillOp  = layerOpacity.meanNitrate;
+            const layer = L.geoJSON(zonesGeoJSON, {
+                style: f => ({
+                    fillColor:   colorFn(nitrateByZone[getZoneID(f.properties)]),
+                    weight:      1,
+                    color:       "black",
+                    fillOpacity: fillOp,
+                    opacity:     Math.min(1, fillOp + 0.15)
+                }),
+                onEachFeature: (f, lyr) => {
+                    lyr.bindPopup(buildZonePopup(f, nitrateByZone, predictedByZone, residualByZone));
+                }
+            });
+            meanNitrateLayer.addLayer(layer);
+        }
+
+        /** Clears and rebuilds the predicted cancer rate layer using the teal-to-gold palette.
+         *  Each tract is colored by the cancer rate predicted by the regression model.
+         */
+        function rebuildPredictedLayer(predictedByZone, nitrateByZone, residualByZone) {
+            predictedLayer.clearLayers();
+            const colorFn = makeQuantizedRamp(Object.values(predictedByZone), PREDICTED_PALETTE_HEX);
+            const fillOp  = layerOpacity.predicted;
+            const layer = L.geoJSON(zonesGeoJSON, {
+                style: f => ({
+                    fillColor:   colorFn(predictedByZone[getZoneID(f.properties)]),
+                    weight:      1,
+                    color:       "black",
+                    fillOpacity: fillOp,
+                    opacity:     Math.min(1, fillOp + 0.15)
+                }),
+                onEachFeature: (f, lyr) => {
+                    lyr.bindPopup(buildZonePopup(f, nitrateByZone, predictedByZone, residualByZone));
+                }
+            });
+            predictedLayer.addLayer(layer);
+        }
+
+        /** Clears and rebuilds the residuals layer using a diverging blue-white-crimson palette.
+         *  Crimson tracts had higher cancer rates than predicted; blue tracts had lower rates than predicted.
+         */
+        function rebuildResidualLayer(residualByZone, nitrateByZone, predictedByZone) {
+            residualLayer.clearLayers();
+            const colorFn = makeResidualColorFn(Object.values(residualByZone));
+            const fillOp  = layerOpacity.residual;
+            const layer = L.geoJSON(zonesGeoJSON, {
+                style: f => ({
+                    fillColor:   colorFn(residualByZone[getZoneID(f.properties)]),
+                    weight:      1,
+                    color:       "black",
+                    fillOpacity: fillOp,
+                    opacity:     Math.min(1, fillOp + 0.15)
+                }),
+                onEachFeature: (f, lyr) => {
+                    lyr.bindPopup(buildZonePopup(f, nitrateByZone, predictedByZone, residualByZone));
+                }
+            });
+            residualLayer.addLayer(layer);
+        }
+
+        // ====================================================================
+        // K COMPARISON LAYER
+        // These functions build and manage the comparison layer that shows how
+        // predicted cancer rates differ when a different IDW distance exponent
+        // is used. The layer is built on demand when the user runs a comparison
+        // and is kept in comparisonLayer so it can be toggled independently.
+        //
+        //   handleCompareClick        — reads the comparison k input, ensures both
+        //                              k values are cached, then calls buildComparisonLayer
+        //   runAnalysisForKSilent     — computes the full pipeline for a given k and
+        //                              stores the result in cache without updating the
+        //                              primary analysis display or regression box
+        //   buildComparisonLayer      — constructs the per-tract signed-difference map
+        //                              using the orange-white-teal diverging scale
+        //   updateComparisonToggleLabel — keeps the sidebar checkbox label current
+        //                              whenever either k value changes
+        // ====================================================================
+
+        /** Reads the comparison k input and runs both analyses before building the diff layer.
+         *  If either k value is already cached from an earlier run, that computation is skipped.
+         */
+        async function handleCompareClick() {
+            const compareKRaw = parseFloat(document.getElementById("kCompareInput").value);
+            if (isNaN(compareKRaw) || compareKRaw <= 0) {
+                alert("Enter a positive number for the comparison k.");
+                return;
+            }
+            if (!currentPrimaryK) {
+                alert("Run a primary analysis first before comparing.");
+                return;
+            }
+
+            const compareK = String(compareKRaw);
+            const primaryK = currentPrimaryK;
+
+            if (compareK === primaryK) {
+                document.getElementById("compareStatus").innerHTML =
+                    "⚠ Comparison k is the same as the primary k — choose a different value.";
+                return;
+            }
+
+            const runCompareBtn = document.getElementById("runCompareBtn");
+            const runBtn        = document.getElementById("runBtn");
+            runCompareBtn.disabled = true;
+            runBtn.disabled        = true;
+            document.getElementById("compareStatus").innerHTML =
+                "Computing comparison for k=" + primaryK + " vs k=" + compareK + "…";
+            await nextFrame();
+
+            try {
+                /** Ensure the primary k result is in the cache (it always should be at this point). */
+                if (!analysisCache[primaryK]) {
+                    document.getElementById("compareStatus").innerHTML = "Computing primary k=" + primaryK + "…";
+                    await nextFrame();
+                    await runAnalysisForK(primaryK);
+                }
+
+                /** Ensure the comparison k result is cached, running the pipeline silently if needed.
+                 *  The silent variant skips applyAnalysisResult so the primary display stays unchanged.
+                 */
+                if (!analysisCache[compareK]) {
+                    document.getElementById("compareStatus").innerHTML =
+                        "Computing comparison k=" + compareK + " from source data…";
+                    await nextFrame();
+                    await runAnalysisForKSilent(compareK);
+                }
+
+                buildComparisonLayer(primaryK, compareK);
+                document.getElementById("compareStatus").innerHTML =
+                    "✓ Showing differences: k=" + primaryK + " − k=" + compareK;
+
+            } catch (err) {
+                console.error(err);
+                document.getElementById("compareStatus").innerHTML =
+                    "⚠ Comparison failed — see browser console for details.";
+            } finally {
+                runCompareBtn.disabled = false;
+                runBtn.disabled        = false;
+            }
+        }
+
+        /** Runs the full IDW + regression pipeline for a given k and stores the result in the cache,
+         *  but does NOT call applyAnalysisResult — used when computing the comparison k so the
+         *  primary analysis display, regression box, and raster overlay remain unchanged.
+         */
+        async function runAnalysisForKSilent(kRaw) {
+            const k    = String(parseFloat(kRaw));
+            const kNum = parseFloat(k);
+
+            if (analysisCache[k]) return;  /** already cached — nothing to do */
+
+            const raster          = buildIDWRaster(dataBounds, kNum);
+            const nitrateByZone   = {};
+            const predictedByZone = {};
+            const residualByZone  = {};
+            const xs = [], ys = [], ids = [];
+
+            zonesGeoJSON.features.forEach(f => {
+                const id    = getZoneID(f.properties);
+                const meanN = computeZonalNitrate(f, kNum, CONFIG.zonalSamplesPerZone);
+                nitrateByZone[id] = meanN;
+                const cr = getCanRate(f.properties);
+                if (typeof cr === "number" && meanN !== null && !isNaN(meanN)) {
+                    xs.push(meanN); ys.push(cr); ids.push(id);
+                }
+            });
+
+            const reg = linearRegression(xs, ys);
+
+            for (let i = 0; i < ids.length; i++) {
+                const pred = reg.intercept + reg.slope * xs[i];
+                predictedByZone[ids[i]] = pred;
+                residualByZone[ids[i]]  = ys[i] - pred;
+            }
+
+            analysisCache[k] = { raster, nitrateByZone, predictedByZone, residualByZone, regression: reg, xs, ys };
+        }
+
+        /** Builds the comparison layer by taking the signed per-tract difference in predicted
+         *  cancer rate between the primary k and the comparison k.  Positive values mean the
+         *  primary k predicts a higher cancer rate; negative values mean the comparison k does.
+         *  The layer uses a diverging orange-white-teal scale to remain visually distinct from
+         *  the blue-white-crimson residual layer.
+         */
+        function buildComparisonLayer(primaryK, compareK) {
+            const primaryResult = analysisCache[primaryK];
+            const compareResult = analysisCache[compareK];
+            if (!primaryResult || !compareResult) return;
+
+            /** Calculate the signed difference for every tract that has a predicted value in both runs. */
+            const diffByZone = {};
+            const allIDs     = new Set([
+                ...Object.keys(primaryResult.predictedByZone),
+                ...Object.keys(compareResult.predictedByZone)
+            ]);
+            allIDs.forEach(id => {
+                const prim = primaryResult.predictedByZone[id];
+                const comp = compareResult.predictedByZone[id];
+                if (typeof prim === "number" && typeof comp === "number") {
+                    diffByZone[id] = prim - comp;  /** positive = primary predicts higher cancer rate */
+                }
+            });
+
+            const diffVals = Object.values(diffByZone).filter(v => typeof v === "number" && !isNaN(v));
+            if (diffVals.length === 0) return;
+
+            const maxAbs  = Math.max(...diffVals.map(Math.abs)) || 1;
+            const colorFn = makeComparisonColorFn(diffVals);
+            const fillOp  = layerOpacity.comparison;
+
+            comparisonLayer.clearLayers();
+            const layer = L.geoJSON(zonesGeoJSON, {
+                style: f => ({
+                    fillColor:   colorFn(diffByZone[getZoneID(f.properties)]),
+                    weight:      1,
+                    color:       "#444",
+                    fillOpacity: fillOp,
+                    opacity:     Math.min(1, fillOp + 0.15)
+                }),
+                onEachFeature: (f, lyr) => {
+                    lyr.bindPopup(buildComparisonPopup(
+                        f,
+                        primaryResult.predictedByZone,
+                        compareResult.predictedByZone,
+                        diffByZone,
+                        primaryK,
+                        compareK
+                    ));
+                }
+            });
+            comparisonLayer.addLayer(layer);
+
+            /** Store legend metadata so the dynamic legend can render the comparison section. */
+            legendMeta.comparison = { primaryK, compareK, maxAbs };
+
+            /** Auto-enable the comparison toggle and show the layer when a new comparison is built. */
+            const toggle = document.getElementById("comparisonToggle");
+            if (!toggle.checked) {
+                toggle.checked = true;
+                document.getElementById("comparisonOpacityRow").style.display = "flex";
+            }
+            if (!map.hasLayer(comparisonLayer)) comparisonLayer.addTo(map);
+
+            updateComparisonToggleLabel(primaryK, compareK);
+
+            /** Display summary statistics (max absolute difference, mean, and per-direction tract counts)
+             *  in the comparison section to give the user a quantitative sense of how much k matters.
+             */
+            const meanDiff = diffVals.reduce((s, v) => s + v, 0) / diffVals.length;
+            const posCnt   = diffVals.filter(v => v >  0.000005).length;
+            const negCnt   = diffVals.filter(v => v < -0.000005).length;
+            const agrCnt   = diffVals.length - posCnt - negCnt;
+            document.getElementById("compareStats").style.display = "block";
+            document.getElementById("compareStatsText").innerHTML =
+                "Max |diff|: " + maxAbs.toFixed(6) +
+                "<br>Mean diff: " + (meanDiff >= 0 ? "+" : "") + meanDiff.toFixed(6) +
+                "<br>Tracts where k=" + primaryK + " predicts higher: " + posCnt +
+                "<br>Tracts where k=" + compareK + " predicts higher: " + negCnt +
+                "<br>Tracts where k values agree closely: " + agrCnt;
+
+            rebuildDynamicLegend();
+        }
+
+        /** Updates the comparison layer checkbox label in the sidebar to reflect the
+         *  current primary and comparison k values, giving the user a clear reminder
+         *  of what the layer is showing without having to open the comparison section.
+         */
+        function updateComparisonToggleLabel(primaryK, compareK) {
+            document.getElementById("comparisonToggleLabel").innerHTML =
+                "K Comparison (k=" + primaryK + " − k=" + compareK + ")";
+        }
+
+        // ====================================================================
+        // WISCONSIN CITIES REFERENCE LAYER
+        // A static, hard-coded list of significant Wisconsin cities with their
+        // WGS84 coordinates and approximate populations. Population is used
+        // only to decide which cities receive a larger marker and bolder label
+        // so the most prominent cities stand out at the default zoom level.
+        //
+        // Each city also carries an explicit labelDir ('top' | 'bottom' | 'left' | 'right')
+        // and labelOffset (pixels), assigned by hand per-city rather than by a single
+        // east/west split. This is what keeps labels in tight clusters (e.g. the
+        // Milwaukee/Waukesha/Brookfield/New Berlin area, or the Appleton/Oshkosh/
+        // Fond du Lac corridor) from overlapping each other.
+        //
+        //   WI_CITIES           — array of { name, lat, lng, pop, labelDir, labelOffset } objects
+        //                         covering the largest cities and regional centers
+        //                         across the state
+        //   buildCitiesLayer    — creates a Leaflet circle marker and a permanent
+        //                         text-only tooltip for each city, sized by
+        //                         population tier, and adds them all to citiesLayer
+        //                         inside the dedicated 'citiesPane' so this layer
+        //                         always draws on top of every analysis layer.
+        // ====================================================================
+
+        /** Hard-coded coordinates and populations for significant Wisconsin cities.
+         *  Coordinates are WGS84 decimal degrees. Population values are approximate
+         *  and are used only for visual sizing — they do not affect the analysis.
+         */
+        const WI_CITIES = [
+            /** Major cities (population > 100 000) */
+            { name: "Milwaukee",   lat: 43.0389, lng: -87.9065, pop: 577222, labelDir: "right",  labelOffset: 9 },
+            { name: "Madison",     lat: 43.0731, lng: -89.4012, pop: 269840, labelDir: "right",  labelOffset: 9 },
+            { name: "Green Bay",   lat: 44.5133, lng: -88.0133, pop: 107395, labelDir: "right",  labelOffset: 9 },
+
+            /** Large cities (population 50 000 – 100 000) */
+            { name: "Kenosha",     lat: 42.5847, lng: -87.8212, pop: 99889,  labelDir: "bottom", labelOffset: 8 },
+            { name: "Racine",      lat: 42.7261, lng: -87.7829, pop: 77816,  labelDir: "right",  labelOffset: 8 },
+            { name: "Appleton",    lat: 44.2619, lng: -88.4154, pop: 75644,  labelDir: "top",    labelOffset: 8 },
+            { name: "Waukesha",    lat: 43.0117, lng: -88.2315, pop: 72419,  labelDir: "left",   labelOffset: 8 },
+            { name: "Oshkosh",     lat: 44.0247, lng: -88.5426, pop: 66778,  labelDir: "bottom", labelOffset: 8 },
+            { name: "Eau Claire",  lat: 44.8113, lng: -91.4985, pop: 69967,  labelDir: "left",   labelOffset: 8 },
+            { name: "Janesville",  lat: 42.6828, lng: -89.0187, pop: 65615,  labelDir: "bottom", labelOffset: 8 },
+
+            /** Regional centers and smaller cities */
+            { name: "La Crosse",     lat: 43.8014, lng: -91.2396, pop: 52680, labelDir: "left",   labelOffset: 7 },
+            { name: "Sheboygan",     lat: 43.7508, lng: -87.7145, pop: 49288, labelDir: "right",  labelOffset: 7 },
+            { name: "Fond du Lac",   lat: 43.7730, lng: -88.4471, pop: 43872, labelDir: "right",  labelOffset: 7 },
+            { name: "Wausau",        lat: 44.9591, lng: -89.6301, pop: 39993, labelDir: "left",   labelOffset: 7 },
+            { name: "Brookfield",    lat: 43.0606, lng: -88.1065, pop: 41464, labelDir: "top",    labelOffset: 10 },
+            { name: "New Berlin",    lat: 42.9764, lng: -88.1078, pop: 40885, labelDir: "bottom", labelOffset: 10 },
+            { name: "Beloit",        lat: 42.5084, lng: -89.0318, pop: 36888, labelDir: "bottom", labelOffset: 7 },
+            { name: "Manitowoc",     lat: 44.0886, lng: -87.6562, pop: 32595, labelDir: "right",  labelOffset: 7 },
+            { name: "Superior",      lat: 46.7208, lng: -92.1041, pop: 26751, labelDir: "left",   labelOffset: 7 },
+            { name: "Stevens Point", lat: 44.5236, lng: -89.5746, pop: 26819, labelDir: "right",  labelOffset: 7 },
+            { name: "Marshfield",    lat: 44.6688, lng: -90.1718, pop: 19118, labelDir: "bottom", labelOffset: 7 },
+            { name: "Rhinelander",   lat: 45.6363, lng: -89.4120, pop: 7798,  labelDir: "right",  labelOffset: 7 },
+            { name: "Ashland",       lat: 46.5927, lng: -90.8788, pop: 7774,  labelDir: "left",   labelOffset: 7 },
+            { name: "Antigo",        lat: 45.1413, lng: -89.1540, pop: 8082,  labelDir: "top",    labelOffset: 7 }
+        ];
+
+        /** Translates a labelDir string into the Leaflet tooltip direction + offset options.
+         *  'top' and 'bottom' place the label directly above/below the marker; 'left' and
+         *  'right' place it to the side. This lets nearby cities be spread out in whichever
+         *  direction keeps their text clear of their neighbors.
+         */
+        function tooltipOptionsForDir(dir, offsetPx) {
+            switch (dir) {
+                case "top":    return { direction: "top",    offset: [0, -offsetPx] };
+                case "bottom": return { direction: "bottom", offset: [0,  offsetPx] };
+                case "left":   return { direction: "left",   offset: [-offsetPx, 0] };
+                case "right":
+                default:       return { direction: "right",  offset: [offsetPx, 0] };
+            }
+        }
+
+        /** Builds the cities reference layer by placing a circle marker and a permanent
+         *  label tooltip at each city's coordinates. Cities with population above 100 000
+         *  receive a larger, darker marker and bold label so they stand out as landmarks
+         *  at the default statewide zoom level. Clicking a marker opens a small popup
+         *  showing the city name and its approximate population.
+         *
+         *  Both the marker and its tooltip are placed in the dedicated 'citiesPane' (see
+         *  CUSTOM PANES above), which sits above every analysis layer's pane, so this
+         *  reference layer always renders on top of the map's layer stack.
+         */
+        function buildCitiesLayer() {
+            citiesLayer.clearLayers();
+
+            WI_CITIES.forEach(function (city) {
+                /** Classify each city into a visual tier based on population. */
+                const isMajor  = city.pop >= 100000;
+                const isLarge  = city.pop >= 50000 && city.pop < 100000;
+
+                const radius      = isMajor ? 7 : isLarge ? 5 : 4;
+                const fillColor   = isMajor ? "#1a1a2e" : isLarge ? "#16213e" : "#374785";
+                const fontWeight  = isMajor ? "bold" : "normal";
+                const fontSize    = isMajor ? "12px" : isLarge ? "11px" : "10px";
+
+                /** Create the circle marker at the city's coordinates, in the citiesPane
+                 *  so it always draws above the analysis zone layers and IDW raster.
+                 */
+                const marker = L.circleMarker([city.lat, city.lng], {
+                    radius:      radius,
+                    fillColor:   fillColor,
+                    color:       "#ffffff",
+                    weight:      1.5,
+                    fillOpacity: 0.9,
+                    opacity:     1,
+                    pane:        "citiesPane"
+                });
+
+                /** Bind a permanent tooltip that always shows the city name on the map.
+                 *  The direction and offset come from the city's hand-assigned labelDir /
+                 *  labelOffset so that cities sitting close together on the map (e.g. the
+                 *  Milwaukee metro cluster) spread their labels in different directions
+                 *  instead of stacking on top of one another.
+                 */
+                const dirOpts = tooltipOptionsForDir(city.labelDir, city.labelOffset);
+                marker.bindTooltip(city.name, Object.assign({
+                    permanent: true,
+                    className: "city-label",
+                    pane:      "citiesPane"
+                }, dirOpts));
+
+                /** Bind a click popup showing the city name and rounded population figure. */
+                marker.bindPopup(
+                    "<b>" + city.name + "</b><br>" +
+                    "Approx. population: " + city.pop.toLocaleString()
+                );
+
+                citiesLayer.addLayer(marker);
+            });
+        }
+
+        // ====================================================================
+        // CANCER RATE LAYER (observed)
+        // This is the primary required layer for the assignment, built once at
+        // startup from the census tract data. It does not depend on the k value
+        // and does not change between analysis runs. It starts hidden — only the
+        // Predicted Cancer Rate layer is shown by default — but can be toggled
+        // on from the sidebar at any time.
+        //
+        //   computeQuantileBreaks — divides the cancer rate values into equal-count
+        //                           groups and returns the boundary values between them
+        //   buildCancerColorFn    — assigns a color to each tract using quantile
+        //                           classification and stores legend metadata for it
+        //   buildCancerLayer      — creates the Leaflet GeoJSON layer with click,
+        //                           hover, and popup interactions for each tract
+        // ====================================================================
+        function computeQuantileBreaks(values, nBuckets) {
+            const valid = values.filter(v => typeof v === "number" && !isNaN(v)).slice().sort((a, b) => a - b);
+            if (valid.length === 0) return [];
+            const breaks = [];
+            for (let i = 1; i < nBuckets; i++) breaks.push(valid[Math.floor((i / nBuckets) * (valid.length - 1))]);
+            return breaks;
+        }
+
+        function buildCancerColorFn(zonesFC) {
+            const values  = zonesFC.features.map(f => getCanRate(f.properties));
+            const palette = CANCER_PALETTE_HEX;
+            const cuts    = computeQuantileBreaks(values, palette.length);
+            cancerBreaksForLegend = [];
+            for (let i = 0; i < palette.length; i++) {
+                const lo = i === 0                ? -Infinity : cuts[i - 1];
+                const hi = i === palette.length - 1 ? Infinity  : cuts[i];
+                cancerBreaksForLegend.push({
+                    color: palette[i],
+                    label: i === 0               ? "≤ " + hi.toFixed(4)
+                         : i === palette.length - 1 ? "> " + lo.toFixed(4)
+                         :                          lo.toFixed(4) + " – " + hi.toFixed(4)
+                });
+            }
+
+            /** Store cancer legend metadata so the dynamic (bottom-right) legend can use it. */
+            legendMeta.cancer = cancerBreaksForLegend.slice();
+
+            return function (value) {
+                if (typeof value !== "number" || isNaN(value)) return "#cccccc";
+                for (let i = 0; i < cuts.length; i++) if (value <= cuts[i]) return palette[i];
+                return palette[palette.length - 1];
+            };
+        }
+
+        function buildCancerLayer() {
+            cancerColorFn = buildCancerColorFn(zonesGeoJSON);
+            cancerLayer.clearLayers();
+
+            const fillOp = layerOpacity.cancer;
+            const layer  = L.geoJSON(zonesGeoJSON, {
+                style: f => ({
+                    fillColor:   cancerColorFn(getCanRate(f.properties)),
+                    weight:      1,
+                    color:       "black",
+                    fillOpacity: fillOp,
+                    opacity:     Math.min(1, fillOp + 0.15)
+                }),
+                onEachFeature: function (f, lyr) {
+                    const value    = getCanRate(f.properties);
+                    const infoText =
+                        "<b>" + getZoneLabel(f.properties) + "</b>" +
+                        "<br><b>Observed cancer rate:</b> " +
+                        (typeof value === "number" ? value.toFixed(5) : "N/A") +
+                        "<br><span style='color:#888;font-size:11px;'>Run an analysis to see nitrate,<br>predicted rate, and residual.</span>";
+
+                    lyr.bindPopup(infoText);
+                    /** Clicking a tract also populates the detail panel in the sidebar. */
+                    lyr.on("click", () => { document.getElementById("tractInfo").innerHTML = infoText; });
+                    /** Hovering over a tract highlights its border temporarily. */
+                    lyr.on("mouseover", e => { e.target.setStyle({ weight: 3, color: "#222", fillOpacity: 0.9 }); });
+                    lyr.on("mouseout",  e => {
+                        e.target.setStyle({ weight: 1, color: "black", fillColor: cancerColorFn(value), fillOpacity: layerOpacity.cancer });
+                    });
+                }
+            });
+            cancerLayer.addLayer(layer);
+        }
+
+        // ====================================================================
+        // USER INTERFACE WIRING
+        // Connects the sidebar controls to the analysis and map functions.
+        //   handleRunClick        — reads the k input and triggers a new analysis run
+        //   preset buttons        — set the k value and immediately trigger a run
+        //   nitrateRasterToggle   — adds or removes the IDW raster from the map
+        //   cancerToggle          — adds or removes the cancer rate layer from the map
+        //   meanNitrateToggle     — adds or removes the mean nitrate zone layer
+        //   predictedToggle       — adds or removes the predicted cancer rate zone layer
+        //   residualToggle        — adds or removes the residuals zone layer
+        //   comparisonToggle      — adds or removes the k comparison zone layer
+        //   comparison presets    — quick-select buttons for the comparison k input
+        //   per-layer opacity     — each sidebar opacity slider updates the live layer
+        //                          and stays in sync with the matching legend slider
+        //   rebuildDynamicLegend  — called on every toggle change so the legend always
+        //                          reflects only the layers that are currently visible
+        // ====================================================================
+        function handleRunClick() {
+            const kVal = parseFloat(document.getElementById("kInput").value);
+            if (isNaN(kVal) || kVal <= 0) {
+                alert("Enter a positive number for k. The assignment recommends k > 1.");
+                return;
+            }
+            runAnalysisForK(kVal);
+        }
+
+        document.querySelectorAll(".preset-btn[data-k]").forEach(btn => {
+            btn.addEventListener("click", () => {
+                document.getElementById("kInput").value = btn.getAttribute("data-k");
+                handleRunClick();
+            });
+        });
+
+        /** Quick-select preset buttons for the comparison k input field. */
+        document.querySelectorAll(".preset-btn[data-compare-k]").forEach(btn => {
+            btn.addEventListener("click", () => {
+                document.getElementById("kCompareInput").value = btn.getAttribute("data-compare-k");
+                handleCompareClick();
+            });
+        });
+
+        /** Toggles the IDW raster on or off and shows or hides its sidebar opacity slider. */
+        document.getElementById("nitrateRasterToggle").addEventListener("change", function () {
+            document.getElementById("nitrateRasterOpacityRow").style.display = this.checked ? "flex" : "none";
+            if (currentRasterOverlay) {
+                if (this.checked) currentRasterOverlay.addTo(map); else map.removeLayer(currentRasterOverlay);
+            }
+            rebuildDynamicLegend();
+        });
+
+        /** Toggles the cancer rate layer on or off and shows or hides its sidebar opacity slider. */
+        document.getElementById("cancerToggle").addEventListener("change", function () {
+            document.getElementById("cancerOpacityRow").style.display = this.checked ? "flex" : "none";
+            if (this.checked) cancerLayer.addTo(map); else map.removeLayer(cancerLayer);
+            rebuildDynamicLegend();
+        });
+
+        /** Toggles the mean nitrate zone layer on or off and shows or hides its sidebar opacity slider. */
+        document.getElementById("meanNitrateToggle").addEventListener("change", function () {
+            document.getElementById("meanNitrateOpacityRow").style.display = this.checked ? "flex" : "none";
+            if (this.checked) meanNitrateLayer.addTo(map); else map.removeLayer(meanNitrateLayer);
+            rebuildDynamicLegend();
+        });
+
+        /** Toggles the predicted cancer rate layer on or off and shows or hides its sidebar opacity slider. */
+        document.getElementById("predictedToggle").addEventListener("change", function () {
+            document.getElementById("predictedOpacityRow").style.display = this.checked ? "flex" : "none";
+            if (this.checked) predictedLayer.addTo(map); else map.removeLayer(predictedLayer);
+            rebuildDynamicLegend();
+        });
+
+        /** Toggles the residuals layer on or off and shows or hides its sidebar opacity slider. */
+        document.getElementById("residualToggle").addEventListener("change", function () {
+            document.getElementById("residualOpacityRow").style.display = this.checked ? "flex" : "none";
+            if (this.checked) residualLayer.addTo(map); else map.removeLayer(residualLayer);
+            rebuildDynamicLegend();
+        });
+
+        /** Toggles the k comparison layer on or off and shows or hides its sidebar opacity slider.
+         *  The layer is only added to the map if a comparison has already been built;
+         *  toggling on before any comparison is run has no visible effect until the user runs one.
+         */
+        document.getElementById("comparisonToggle").addEventListener("change", function () {
+            document.getElementById("comparisonOpacityRow").style.display = this.checked ? "flex" : "none";
+            if (this.checked) {
+                if (legendMeta.comparison) comparisonLayer.addTo(map);
+            } else {
+                map.removeLayer(comparisonLayer);
+            }
+            rebuildDynamicLegend();
+        });
+
+        /** Toggles the Wisconsin cities reference layer on or off.
+         *  Because the markers are small and the labels are always shown at full opacity,
+         *  no per-layer opacity slider is provided for this layer.
+         */
+        document.getElementById("citiesToggle").addEventListener("change", function () {
+            if (this.checked) citiesLayer.addTo(map); else map.removeLayer(citiesLayer);
+        });
+
+        /** Sidebar opacity slider for the nitrate raster — updates the overlay and syncs to the legend. */
+        document.getElementById("opacitySlider").addEventListener("input", function () {
+            const val = parseFloat(this.value);
+            document.getElementById("nitrateRasterOpacityVal").textContent = Math.round(val * 100) + "%";
+            applyLayerOpacity("nitrateRaster", val);
+            const legendSlider = document.getElementById("legendNitrateRasterOpacity");
+            if (legendSlider) { legendSlider.value = val; document.getElementById("legendNitrateRasterOpacityVal").textContent = Math.round(val * 100) + "%"; }
+        });
+
+        /** Sidebar opacity slider for the cancer rate layer — updates the layer and syncs to the legend. */
+        document.getElementById("cancerOpacitySlider").addEventListener("input", function () {
+            const val = parseFloat(this.value);
+            document.getElementById("cancerOpacityVal").textContent = Math.round(val * 100) + "%";
+            applyLayerOpacity("cancer", val);
+            const legendSlider = document.getElementById("legendCancerOpacity");
+            if (legendSlider) { legendSlider.value = val; document.getElementById("legendCancerOpacityVal").textContent = Math.round(val * 100) + "%"; }
+        });
+
+        /** Sidebar opacity slider for the mean nitrate zone layer — updates the layer and syncs to the legend. */
+        document.getElementById("meanNitrateOpacitySlider").addEventListener("input", function () {
+            const val = parseFloat(this.value);
+            document.getElementById("meanNitrateOpacityVal").textContent = Math.round(val * 100) + "%";
+            applyLayerOpacity("meanNitrate", val);
+            const legendSlider = document.getElementById("legendMeanNitrateOpacity");
+            if (legendSlider) { legendSlider.value = val; document.getElementById("legendMeanNitrateOpacityVal").textContent = Math.round(val * 100) + "%"; }
+        });
+
+        /** Sidebar opacity slider for the predicted cancer rate layer — updates the layer and syncs to the legend. */
+        document.getElementById("predictedOpacitySlider").addEventListener("input", function () {
+            const val = parseFloat(this.value);
+            document.getElementById("predictedOpacityVal").textContent = Math.round(val * 100) + "%";
+            applyLayerOpacity("predicted", val);
+            const legendSlider = document.getElementById("legendPredictedOpacity");
+            if (legendSlider) { legendSlider.value = val; document.getElementById("legendPredictedOpacityVal").textContent = Math.round(val * 100) + "%"; }
+        });
+
+        /** Sidebar opacity slider for the residuals layer — updates the layer and syncs to the legend. */
+        document.getElementById("residualOpacitySlider").addEventListener("input", function () {
+            const val = parseFloat(this.value);
+            document.getElementById("residualOpacityVal").textContent = Math.round(val * 100) + "%";
+            applyLayerOpacity("residual", val);
+            const legendSlider = document.getElementById("legendResidualOpacity");
+            if (legendSlider) { legendSlider.value = val; document.getElementById("legendResidualOpacityVal").textContent = Math.round(val * 100) + "%"; }
+        });
+
+        /** Sidebar opacity slider for the k comparison layer — updates the layer and syncs to the legend. */
+        document.getElementById("comparisonOpacitySlider").addEventListener("input", function () {
+            const val = parseFloat(this.value);
+            document.getElementById("comparisonOpacityVal").textContent = Math.round(val * 100) + "%";
+            applyLayerOpacity("comparison", val);
+            const legendSlider = document.getElementById("legendComparisonOpacity");
+            if (legendSlider) { legendSlider.value = val; document.getElementById("legendComparisonOpacityVal").textContent = Math.round(val * 100) + "%"; }
+        });
+
+        // ====================================================================
+        // STARTUP — initApp
+        // Loads all three datasets in parallel, validates them, and initializes
+        // the map. The cancer rate layer and city labels are built first, but
+        // only the Predicted Cancer Rate layer is shown on the map by default
+        // (once the initial analysis run completes) — every other analysis
+        // layer starts hidden and can be switched on from the sidebar.
+        // The state boundary is drawn as an outline if the file is available.
+        // Any errors during loading or analysis are caught and shown in the status bar.
+        // ====================================================================
+        async function initApp() {
+            setRasterStatus("Loading well_nitrate and cancer zone source data…");
+            document.getElementById("cancerStatus").innerHTML = "Loading zone data…";
+
+            try {
+                /** Load all three files at the same time to reduce startup time. */
+                const [wellsFC, zonesFC, stateFC] = await Promise.all([
+                    loadVectorLayer(CONFIG.wellNitrateURL),
+                    loadVectorLayer(CONFIG.cancerZonesURL),
+                    loadVectorLayer(CONFIG.stateBoundaryURL)
+                ]);
+
+                if (!wellsFC) {
+                    setRasterStatus("⚠ Set CONFIG.wellNitrateURL to your well_nitrate source.");
+                    document.getElementById("cancerStatus").innerHTML = "";
+                    return;
+                }
+                if (!zonesFC) {
+                    document.getElementById("cancerStatus").innerHTML =
+                        "⚠ Set CONFIG.cancerZonesURL to your cancer_tracts/cancer_county source.";
+                    setRasterStatus(""); return;
+                }
+
+                /** Verify that all datasets use WGS84 longitude/latitude coordinates. */
+                checkLooksLikeLonLat(wellsFC, "well_nitrate");
+                checkLooksLikeLonLat(zonesFC, "cancer zones");
+                if (stateFC) checkLooksLikeLonLat(stateFC, "state boundary");
+
+                wells                = extractWells(wellsFC);
+                zonesGeoJSON         = zonesFC;
+                stateBoundaryGeoJSON = stateFC || null;
+
+                dataBounds = computeDataBounds();
+                map.fitBounds(dataBounds);
+
+                /** Build the cancer rate layer's data/coloring (needed for popups even while
+                 *  hidden) but do NOT add it to the map — only Predicted Cancer Rate is shown
+                 *  by default, per the cancerToggle checkbox starting unchecked.
+                 */
+                buildCancerLayer();
+                document.getElementById("cancerStatus").innerHTML = "";
+
+                if (document.getElementById("cancerToggle").checked) cancerLayer.addTo(map);
+
+                /** Add the state boundary as a thin outline on the map if the file loaded successfully. */
+                if (stateBoundaryGeoJSON) {
+                    L.geoJSON(stateBoundaryGeoJSON, { style: { color: "#333", weight: 1.5, fill: false } }).addTo(map);
+                }
+
+                /** Build the initial legend now that the cancer layer metadata is ready. */
+                rebuildDynamicLegend();
+
+                /** Build the cities reference layer and add it to the map if the toggle is on.
+                 *  This runs after the state boundary so city markers render on top of the outline;
+                 *  the dedicated citiesPane also keeps it above every analysis layer regardless of order.
+                 */
+                buildCitiesLayer();
+                if (document.getElementById("citiesToggle").checked) citiesLayer.addTo(map);
+
+                /** Run the initial analysis using the default k value shown in the input field.
+                 *  This populates predictedByZone and, since the Predicted Cancer Rate checkbox
+                 *  starts checked, adds the predicted layer to the map.
+                 */
+                await runAnalysisForK(document.getElementById("kInput").value);
+                if (document.getElementById("predictedToggle").checked) predictedLayer.addTo(map);
+
+            } catch (err) {
+                console.error(err);
+                setRasterStatus("⚠ " + (err && err.message ? err.message : "Error loading source data — see console."));
+                document.getElementById("cancerStatus").innerHTML = "";
+            }
+        }
+
+        initApp();
+
+    </script>
+</body>
+
+</html>
